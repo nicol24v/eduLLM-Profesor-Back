@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rol-profesor-ms
+    networks:
+      - default
+      - observability-net
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://admin:admin@host.docker.internal:5432/edu_llm?schema=comun
+      - HOST=0.0.0.0
+      - PORT=8085
+      - SQLITE_PATH=./game.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  observability-net:
+    external: true
