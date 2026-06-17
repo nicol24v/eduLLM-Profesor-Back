@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rol-profesor-ms
+    container_name: ms-profesor
     networks:
       - default
       - observability-net
@@ -19,7 +17,7 @@ services:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://admin:admin@host.docker.internal:5432/edu_llm?schema=comun
       - HOST=0.0.0.0
-      - PORT=8085
+      - PORT=8082
       - SQLITE_PATH=./game.db
     extra_hosts:
       - "host.docker.internal:host-gateway"

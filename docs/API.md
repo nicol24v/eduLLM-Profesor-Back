@@ -2,7 +2,7 @@
 
 # API Reference — Profesor MS
 
-> **Nota para IA:** Todos los endpoints requieren que el Gateway inyecte los headers `X-User-Id`, `X-User-Role` y `X-Username`. El middleware `requireProfesor` rechaza peticiones donde `X-User-Role != PROFESOR`.
+> **Nota para IA:** `profesor_id` va en body (POST/PUT) o query param (GET/DELETE). Es el ID de `tbl_m_profesor`.
 
 **Base URL:** `http://localhost:8085/api/profesor`
 
@@ -13,7 +13,11 @@
 ### `GET /dashboard`
 Estadísticas principales del panel docente (HU9).
 
-**Headers requeridos:** `X-User-Id`, `X-User-Role: PROFESOR`
+**Query params:**
+
+| Param | Tipo | Descripción |
+|-------|------|-------------|
+| `profesor_id` | `number` | ID del profesor en `tbl_m_profesor` |
 
 **Respuesta 200:**
 ```json
@@ -49,6 +53,8 @@ Estadísticas principales del panel docente (HU9).
 ### `GET /dashboard/graficas`
 Datos para las tres gráficas del dashboard (HU16).
 
+**Query params:** `profesor_id` (number)
+
 **Respuesta 200:**
 ```json
 {
@@ -82,6 +88,7 @@ Lista paginada de cuestionarios del profesor (HU12).
 
 | Param | Tipo | Descripción |
 |-------|------|-------------|
+| `profesor_id` | `number` | ID del profesor (requerido) |
 | `page` | `number` | Página (default: 1) |
 | `limit` | `number` | Registros por página (default: 20) |
 | `materia_id` | `number` | Filtrar por materia |
@@ -98,65 +105,118 @@ Lista paginada de cuestionarios del profesor (HU12).
 ---
 
 ### `POST /cuestionarios`
-Crea un cuestionario manualmente (HU10).
+Crea un cuestionario — manual o por IA según el flag `esIA` (HU10/HU11). Las preguntas siguen el formato GBNF (`questions`, `question`, `answers`, `solutions`).
 
 **Body:**
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `profesor_id` | `number` | Sí | ID del profesor |
+| `materia_id` | `number` | Sí | ID de la materia |
+| `title` | `string` | Sí | Título del cuestionario |
+| `questions` | `array` | Sí | Lista de preguntas (formato GBNF) |
+| `esIA` | `boolean` | No | `true` para marcar como generado por IA |
+| `descripcion` | `string` | No | Descripción (modo IA: se sobrescribe con `"IA"`) |
+| `configuracion` | `object` | No | Configuración adicional |
+
+Cada pregunta en `questions`:
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `question` | `string` | Sí | Texto de la pregunta |
+| `options` | `string[]` | Sí | Opciones de respuesta (2–4) |
+| `solutions` | `number[]` | Sí | Índices de respuestas correctas (al menos 1) |
+| `cooldown` | `number` | Sí | Segundos de espera antes de mostrar resultados |
+| `time` | `number` | Sí | Tiempo límite en segundos |
+| `image` | `string` | No | URL de imagen asociada |
+
 ```json
 {
-  "titulo": "Fracciones básicas",
-  "descripcion": "Cuestionario de repaso",
-  "profesor_materia_id": 3,
-  "configuracion": { "mostrar_puntaje": true },
-  "preguntas": [
+  "profesor_id": 5,
+  "materia_id": 3,
+  "title": "Fracciones básicas",
+  "questions": [
     {
-      "texto": "¿Cuánto es 1/2 + 1/4?",
-      "tipo": "single_choice",
-      "tiempo_limite": 30,
+      "question": "¿Cuánto es 1/2 + 1/4?",
+      "options": ["3/4", "1/2"],
+      "solutions": [0],
       "cooldown": 5,
-      "image_url": null,
-      "audio_url": null,
-      "video_url": null,
-      "opciones": [
-        { "texto": "3/4", "orden": 1, "es_correcta": true },
-        { "texto": "1/2", "orden": 2, "es_correcta": false },
-        { "texto": "1/4", "orden": 3, "es_correcta": false },
-        { "texto": "2/3", "orden": 4, "es_correcta": false }
-      ]
+      "time": 30
     }
   ]
 }
 ```
 
-**Validaciones:**
-- `titulo` requerido
-- `profesor_materia_id` debe pertenecer al profesor autenticado
-- Mínimo 1 pregunta, máximo 20
-- Cada pregunta con ≥2 opciones y exactamente 1 `es_correcta: true`
+**Modo IA (`esIA: true`):** el backend marca `descripcion = "IA"` para identificar el origen.
 
-**Respuesta 201:** Cuestionario completo con preguntas y opciones.
+**Validaciones:**
+- `title` requerido
+- Mínimo 1 pregunta, máximo 20
+- Cada pregunta con ≥2 respuestas y al menos 1 solución válida
+- `cooldown` entero ≥ 0, `time` entero > 0
+
+**Respuesta 201:**
+```json
+{ "success": true, "message": "Cuestionario creado" }
+```
 
 ---
 
-### `POST /cuestionarios/ia`
-Genera un cuestionario usando IA/RAG (HU11).
+### `POST /preguntas`
+Importa un cuestionario generado por IA o manual en formato GBNF (HU10/HU11). El body sigue la gramática definida en `quiz_generation.gbnf`.
 
 **Body:**
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `subject` | `string` | Sí | Materia del cuestionario |
+| `questions` | `array` | Sí | Lista de preguntas |
+| `origen` | `string` | Sí | `"IA"` o `"MANUAL"` |
+
+Cada pregunta en `questions`:
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `question` | `string` | Sí | Texto de la pregunta |
+| `options` | `string[]` | Sí | Opciones de respuesta (2–4) |
+| `solutions` | `number[]` | Sí | Índices de respuestas correctas (al menos 1) |
+| `cooldown` | `number` | Sí | Segundos de espera antes de mostrar resultados |
+| `time` | `number` | Sí | Tiempo límite en segundos |
+| `image` | `string` | No | URL de imagen asociada |
+
 ```json
 {
-  "tema": "Sistema solar",
-  "profesor_materia_id": 3,
-  "cantidad_preguntas": 5
+  "subject": "Ciencias",
+  "questions": [
+    {
+      "question": "¿Cuál es la fórmula química del agua?",
+      "options": ["H2O", "CO2", "NaCl", "O2"],
+      "solutions": [0],
+      "cooldown": 5,
+      "time": 20
+    }
+  ],
+  "origen": "IA"
 }
 ```
 
-> Llama a `RAG_SERVICE_URL/api/rag/generate-quiz`. Si el servicio no está disponible responde `503`.
+**Validaciones:**
+- `subject` requerido
+- Mínimo 1 pregunta
+- Cada pregunta con ≥2 respuestas y al menos 1 solución válida
+- `cooldown` entero ≥ 0, `time` entero > 0
 
-**Respuesta 201:** Cuestionario creado y persistido (mismo formato que `POST /cuestionarios`).
+**Respuesta 201:**
+```json
+{ "success": true, "message": "Preguntas importadas" }
+```
 
 ---
 
 ### `GET /cuestionarios/:id`
 Detalle de un cuestionario con todas sus preguntas y opciones (HU12).
+
+**Query params:** `profesor_id` (number)
 
 **Respuesta 200:**
 ```json
@@ -188,25 +248,33 @@ Detalle de un cuestionario con todas sus preguntas y opciones (HU12).
 ---
 
 ### `PUT /cuestionarios/:id`
-Actualiza título, descripción, configuración o preguntas (HU12).
+Actualiza título, descripción, configuración o preguntas (HU12). Las preguntas siguen el formato GBNF.
 
 **Body (todos los campos opcionales):**
+
+Cada pregunta en `questions` puede incluir `id` (existente) para actualizar, u omitirlo para crear una nueva.
+
 ```json
 {
   "titulo": "Nuevo título",
-  "preguntas": [
-    { "id_pregunta": 10, "texto": "Texto actualizado", "tiempo_limite": 45,
-      "opciones": [{ "id_opcion": 40, "texto": "3/4", "orden": 1, "es_correcta": true }] },
-    { "texto": "Nueva pregunta sin id", "tiempo_limite": 20,
-      "opciones": [{ "texto": "Sí", "orden": 1, "es_correcta": true }, { "texto": "No", "orden": 2, "es_correcta": false }] }
+  "questions": [
+    { "id": 10, "question": "Texto actualizado", "options": ["3/4", "1/2"], "solutions": [0], "cooldown": 5, "time": 45 },
+    { "question": "Nueva pregunta", "options": ["Sí", "No"], "solutions": [0], "cooldown": 5, "time": 20 }
   ]
 }
+```
+
+**Respuesta 200:**
+```json
+{ "success": true, "message": "Cuestionario actualizado" }
 ```
 
 ---
 
 ### `DELETE /cuestionarios/:id`
 Elimina (soft delete) un cuestionario (HU12).
+
+**Query params:** `profesor_id` (number)
 
 **Respuesta 200:**
 ```json
@@ -220,7 +288,7 @@ Elimina (soft delete) un cuestionario (HU12).
 ### `GET /partidas`
 Historial de todas las partidas del profesor (HU15).
 
-**Query params:** `page`, `limit`, `prueba_id`
+**Query params:** `profesor_id`, `page`, `limit`, `prueba_id`
 
 **Respuesta 200:**
 ```json
@@ -248,22 +316,12 @@ Crea una nueva sesión de quiz a partir de un cuestionario (HU13). Genera el có
 
 **Body:**
 ```json
-{ "prueba_id": 1 }
+{ "profesor_id": 5, "prueba_id": 1 }
 ```
 
 **Respuesta 201:**
 ```json
-{
-  "success": true,
-  "data": {
-    "id_partida": 9,
-    "codigo_acceso": "MN4T7R",
-    "estado_partida": "esperando",
-    "titulo_prueba": "Fracciones básicas",
-    "total_preguntas": 8,
-    "fecha_creacion": "2026-06-11T15:00:00Z"
-  }
-}
+{ "success": true, "message": "Partida creada" }
 ```
 
 ---
@@ -271,10 +329,14 @@ Crea una nueva sesión de quiz a partir de un cuestionario (HU13). Genera el có
 ### `GET /partidas/:id`
 Detalle de una partida con sus preguntas y preguntas de la prueba.
 
+**Query params:** `profesor_id` (number)
+
 ---
 
 ### `PUT /partidas/:id/iniciar`
 Inicia la partida (estado `esperando` → `en_curso`). Emite evento Socket.io `partida:iniciada`.
+
+**Query params:** `profesor_id` (number)
 
 **Respuesta 200:**
 ```json
@@ -287,6 +349,8 @@ Inicia la partida (estado `esperando` → `en_curso`). Emite evento Socket.io `p
 
 ### `PUT /partidas/:id/siguiente-pregunta`
 Avanza a la siguiente pregunta. Emite `partida:pregunta` por Socket.io **sin `es_correcta`** a los estudiantes.
+
+**Query params:** `profesor_id` (number)
 
 **Respuesta 200:** Pregunta actual con opciones **incluyendo `es_correcta`** (solo para el profesor).
 
@@ -314,6 +378,8 @@ Avanza a la siguiente pregunta. Emite `partida:pregunta` por Socket.io **sin `es
 ### `PUT /partidas/:id/finalizar`
 Finaliza la partida (cualquier estado → `finalizada`). Emite `partida:finalizada`.
 
+**Query params:** `profesor_id` (number)
+
 **Respuesta 200:**
 ```json
 { "success": true, "data": { "id_partida": 9, "estado_partida": "finalizada", "finalizado_en": "..." } }
@@ -323,6 +389,8 @@ Finaliza la partida (cualquier estado → `finalizada`). Emite `partida:finaliza
 
 ### `GET /partidas/:id/resultados`
 Resultados completos de la partida con detalle por estudiante (HU14).
+
+**Query params:** `profesor_id` (number)
 
 **Respuesta 200:**
 ```json
@@ -352,6 +420,8 @@ Resultados completos de la partida con detalle por estudiante (HU14).
 ### `GET /partidas/:id/ranking`
 Ranking ordenado por puntaje descendente (HU14).
 
+**Query params:** `profesor_id` (number)
+
 **Respuesta 200:**
 ```json
 {
@@ -369,6 +439,8 @@ Ranking ordenado por puntaje descendente (HU14).
 
 ### `GET /materias`
 Lista de materias asignadas al profesor con estadísticas.
+
+**Query params:** `profesor_id` (number)
 
 **Respuesta 200:**
 ```json
@@ -391,6 +463,8 @@ Lista de materias asignadas al profesor con estadísticas.
 
 ### `GET /materias/:id`
 Detalle de una materia asignada, incluyendo lista de estudiantes matriculados.
+
+**Query params:** `profesor_id` (number)
 
 ---
 
@@ -423,7 +497,7 @@ Detalle de una materia asignada, incluyendo lista de estudiantes matriculados.
 | Código | Descripción |
 |--------|-------------|
 | 400 | Validación fallida (campo requerido, estado incorrecto) |
-| 401 | No autenticado (sin headers del gateway) |
+| 401 | No autenticado |
 | 403 | Rol incorrecto (no es PROFESOR) |
 | 404 | Recurso no encontrado o sin permisos |
 | 409 | Violación de unicidad (Prisma P2002) |

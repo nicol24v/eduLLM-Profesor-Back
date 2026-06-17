@@ -28,7 +28,7 @@ class QuizImporter {
 
     const preguntasData = questions.map((q) => {
       const correctIdx = q.solutions[0];
-      const opciones = q.answers.map((texto, idx) => ({
+      const opciones = q.options.map((texto, idx) => ({
         texto,
         orden: idx + 1,
         es_correcta: idx === correctIdx,

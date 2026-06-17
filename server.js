@@ -5,7 +5,7 @@ const SocketServer = require('./src/infrastructure/socket/SocketServer');
 const logger = require('./src/config/logger');
 
 const HOST = process.env.HOST || '0.0.0.0';
-const PORT = process.env.PORT || 8085;
+const PORT = process.env.PORT || 8082;
 
 const server = http.createServer(app);
 SocketServer.init(server);

@@ -2,26 +2,28 @@
 
 # Servicios internos — Profesor MS
 
-> **Nota para IA:** Cada servicio contiene la lógica de negocio. Los controladores no tienen lógica propia — solo llaman al servicio. Los repositorios solo tienen queries Prisma reutilizables.
+> **Nota para IA:** Cada servicio es una **clase** con métodos públicos y privados (`#`). Los controladores instancian el servicio vía su singleton exportado. Los repositorios también son clases. Los **mappers** transforman datos DB→API.
 
 ## Patrón general
 
 ```
-Controller → Service → Repository → Prisma
+Controller → Service (class) → Mapper (static) → Repository (class) → Prisma
 ```
 
-Todos los servicios usan `getProfesorOrFail(usuarioId)` como primera operación para obtener el `id_profesor` desde `tbl_m_profesor.usuario_id`.
+Todos los métodos usan `#validateProfesorExists(profesorId)` — lookup por `id_profesor`. El `profesor_id` viene del request: body (POST/PUT) o query (GET/DELETE).
 
 ---
 
-## `dashboard.service.js`
+## `DashboardService` — `dashboard.service.js`
 
 **Responsabilidad:** Estadísticas del panel docente y datos para gráficas.
 
-| Función | Descripción | Tablas leídas |
+| Método | Descripción | Tablas leídas |
 |---------|-------------|---------------|
-| `getDashboardStats(usuarioId)` | Total estudiantes, cuestionarios, materias y partidas pendientes | `tbl_m_profesor`, `tbl_t_profesor_materia`, `tbl_m_estudiante_materia`, `tbl_t_prueba`, `tbl_t_partida` |
-| `getGraficas(usuarioId)` | Datos para 3 gráficas: barra horizontal (por alumno), barra vertical (por quiz), torta (distribución de puntajes) | + `tbl_t_partida_estudiante`, `tbl_m_usuario` |
+| `getDashboardStats(profesorId)` | Total estudiantes, cuestionarios, materias y partidas pendientes | `tbl_m_profesor`, `tbl_t_profesor_materia`, `tbl_m_estudiante_materia`, `tbl_t_prueba`, `tbl_t_partida` |
+| `getGraficas(profesorId)` | Datos para 3 gráficas: barra horizontal (por alumno), barra vertical (por quiz), torta (distribución de puntajes) | + `tbl_t_partida_estudiante`, `tbl_m_usuario` |
+
+**Mapper:** `DashboardMapper` — transforma resultados agregados en formato para gráficas.
 
 **Lógica de normalización de puntajes (gráfica torta):**  
 `porcentaje = (puntaje_total / (total_preguntas × 1000)) × 100`  
@@ -29,43 +31,53 @@ Los 1000 pts por pregunta asumen un modelo Kahoot-like donde el puntaje máximo 
 
 ---
 
-## `cuestionario.service.js`
+## `CuestionarioService` — `cuestionario.service.js`
 
 **Responsabilidad:** Ciclo de vida completo de cuestionarios (HU10-HU12) e integración con IA (HU11).
 
-| Función | Descripción |
-|---------|-------------|
-| `getAll(usuarioId, { page, limit, materia_id })` | Lista paginada de cuestionarios del profesor |
-| `getById(usuarioId, pruebaId)` | Detalle con preguntas y opciones, verificando ownership |
-| `create(usuarioId, body)` | Crea prueba + preguntas + opciones en **una sola transacción** |
-| `createWithAI(usuarioId, body)` | Llama ms-rag y luego delega a `create()` |
-| `update(usuarioId, pruebaId, body)` | Actualiza prueba; permite editar preguntas existentes (por `id_pregunta`) y agregar nuevas |
-| `remove(usuarioId, pruebaId)` | Soft delete (`estado = false`) |
+| Método | Tipo | Descripción |
+|---------|------|-------------|
+| `getAll(profesorId, { page, limit, materia_id })` | GET | Lista paginada de cuestionarios del profesor |
+| `getById(profesorId, pruebaId)` | GET | Detalle con preguntas y opciones, verificando ownership |
+| `create(usuarioId, body)` | POST | Crea prueba + preguntas + opciones en **una sola transacción**; soporta `esIA: true` para generación IA |
+| `update(usuarioId, pruebaId, body)` | PUT | Actualiza prueba; permite editar preguntas existentes (por `id_pregunta`) y agregar nuevas |
+| `remove(profesorId, pruebaId)` | DELETE | Soft delete (`estado = false`) |
 
-**Helper privado `assertOwnership(pruebaId, profesor)`:** Verifica que la prueba pertenece al profesor antes de leer/modificar.
+**Métodos privados:**
+- `#getProfesorOrFail(usuarioId)` — obtiene `tbl_m_profesor` por `usuario_id` (POST/PUT)
+- `#validateProfesorExists(profesorId)` — valida `tbl_m_profesor` por `id_profesor` (GET/DELETE)
+- `#assertOwnership(pruebaId, profesor)` — verifica que la prueba pertenece al profesor
+- `#findActiveProfesorMateria(profesorId, materiaId)` — busca asignación activa por `materia_id` + periodo lectivo activo
+- `#generateWithAI(tema, cantidadPreguntas)` — llama a ms-rag y parsea respuesta
+
+**Mapper:** `CuestionarioMapper` — transforma resultados Prisma en API response (filtra `es_correcta`, renombra campos).
 
 **Validaciones en `create()`:**
-- `profesor_materia_id` debe existir y pertenecer al profesor
+- `materia_id` debe existir y tener una asignación activa para el profesor
 - 1–20 preguntas
 - ≥2 opciones por pregunta
 - Exactamente 1 opción con `es_correcta: true`
 
 ---
 
-## `partida.service.js`
+## `PartidaService` — `partida.service.js`
 
 **Responsabilidad:** Ciclo de vida de sesiones de quiz y control en tiempo real.
 
-| Función | Descripción |
-|---------|-------------|
-| `getHistory(usuarioId, opts)` | Historial paginado de partidas |
-| `getById(usuarioId, partidaId)` | Detalle de la partida con preguntas de la prueba |
-| `create(usuarioId, body)` | Crea partida con código único de 6 chars (hasta 10 reintentos) |
-| `iniciar(usuarioId, partidaId)` | `esperando → en_curso`, emite `partida:iniciada` Socket.io |
-| `siguientePregunta(usuarioId, partidaId)` | Incrementa índice en `sessionStates`, emite `partida:pregunta` sin `es_correcta` |
-| `finalizar(usuarioId, partidaId)` | Cualquier estado → `finalizada`, limpia `sessionStates`, emite `partida:finalizada` |
-| `getResultados(usuarioId, partidaId)` | Delega a `partidaRepository.findResultados()` |
-| `getRanking(usuarioId, partidaId)` | Ranking ordenado por `puntaje_total DESC` |
+| Método | Tipo | Descripción |
+|---------|------|-------------|
+| `getHistory(profesorId, opts)` | GET | Historial paginado de partidas |
+| `getById(profesorId, partidaId)` | GET | Detalle de la partida con preguntas de la prueba |
+| `create(usuarioId, body)` | POST | Crea partida con código único de 6 chars (hasta 10 reintentos) |
+| `getResultados(profesorId, partidaId)` | GET | Delega a `partidaRepository.findResultados()` |
+| `getRanking(profesorId, partidaId)` | GET | Ranking ordenado por `puntaje_total DESC` |
+
+**Métodos privados:**
+- `#getProfesorOrFail(usuarioId)` — obtiene `tbl_m_profesor` por `usuario_id` (POST)
+- `#validateProfesorExists(profesorId)` — valida `tbl_m_profesor` por `id_profesor` (GET)
+- `#assertPartidaOwnership(partidaId, profesor)` — verifica que la partida pertenece a una prueba del profesor
+
+**Mapper:** `PartidaMapper` — transforma partidas, resultados y ranking para API.
 
 **Estado en memoria (`sessionStates` Map):**
 ```javascript
@@ -75,18 +87,18 @@ Map {
 ```
 Se inicializa en `create()` y `iniciar()`, se elimina en `finalizar()`. No persiste en BD.
 
-**Helper privado `assertPartidaOwnership(partidaId, profesor)`:** Verifica que la partida pertenece a una prueba del profesor.
-
 ---
 
-## `materia.service.js`
+## `MateriaService` — `materia.service.js`
 
 **Responsabilidad:** Materias asignadas al profesor con estadísticas y lista de estudiantes.
 
-| Función | Descripción |
-|---------|-------------|
-| `getMaterias(usuarioId)` | Lista de asignaciones con totales de estudiantes y cuestionarios |
-| `getMateriaById(usuarioId, profesorMateriaId)` | Detalle de una asignación con lista completa de estudiantes matriculados |
+| Método | Tipo | Descripción |
+|---------|------|-------------|
+| `getMaterias(profesorId)` | GET | Lista de asignaciones con totales de estudiantes y cuestionarios |
+| `getMateriaById(profesorId, materiaId)` | GET | Detalle de una asignación con lista completa de estudiantes matriculados |
+
+**Mapper:** `MateriaMapper` — transforma asignaciones y estudiantes para API.
 
 ---
 

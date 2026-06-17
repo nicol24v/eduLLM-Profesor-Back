@@ -1,251 +1,319 @@
 const prisma = require('../config/prisma');
 const AppError = require('../utils/AppError');
-const cuestionarioRepository = require('../repositories/cuestionario.repository');
+const logger = require('../config/logger');
+const CuestionarioRepository = require('../repositories/cuestionario.repository');
+const CuestionarioMapper = require('../mappers/cuestionario.mapper');
 
-const getProfesorOrFail = async (usuarioId) => {
-  const profesor = await prisma.tbl_m_profesor.findUnique({
-    where: { usuario_id: usuarioId, estado: true },
-  });
-  if (!profesor) throw new AppError('Profesor no encontrado', 404);
-  return profesor;
-};
-
-/**
- * Verifica que el cuestionario pertenezca al profesor.
- */
-const assertOwnership = async (pruebaId, profesor) => {
-  const profesorMateriaIds = await prisma.tbl_t_profesor_materia
-    .findMany({ where: { profesor_id: profesor.id_profesor, estado: true }, select: { id_profesor_materia: true } })
-    .then((rows) => rows.map((r) => r.id_profesor_materia));
-
-  const prueba = await prisma.tbl_t_prueba.findFirst({
-    where: {
-      id_prueba: pruebaId,
-      profesor_materia_id: { in: profesorMateriaIds },
-      estado: true,
-    },
-  });
-  if (!prueba) throw new AppError('Cuestionario no encontrado o sin acceso', 404);
-  return prueba;
-};
-
-const getAll = async (usuarioId, { page, limit, materia_id }) => {
-  const profesor = await getProfesorOrFail(usuarioId);
-
-  const profesorMateriasWhere = { profesor_id: profesor.id_profesor, estado: true };
-  if (materia_id) profesorMateriasWhere.materia_id = materia_id;
-
-  const profesorMaterias = await prisma.tbl_t_profesor_materia.findMany({
-    where: profesorMateriasWhere,
-    select: { id_profesor_materia: true },
-  });
-  const profesorMateriaIds = profesorMaterias.map((pm) => pm.id_profesor_materia);
-
-  const skip = (page - 1) * limit;
-
-  const [total, cuestionarios] = await Promise.all([
-    prisma.tbl_t_prueba.count({
-      where: { profesor_materia_id: { in: profesorMateriaIds }, estado: true },
-    }),
-    prisma.tbl_t_prueba.findMany({
-      where: { profesor_materia_id: { in: profesorMateriaIds }, estado: true },
-      include: {
-        tbl_t_profesor_materia: {
-          include: { tbl_m_materia: { select: { nombre: true } } },
-        },
-        _count: { select: { tbl_t_pregunta: { where: { estado: true } } } },
-      },
-      orderBy: { fecha_creacion: 'desc' },
-      skip,
-      take: limit,
-    }),
-  ]);
-
-  return {
-    data: cuestionarios.map((c) => ({
-      id_prueba: c.id_prueba,
-      titulo: c.titulo,
-      descripcion: c.descripcion,
-      materia: c.tbl_t_profesor_materia?.tbl_m_materia?.nombre || null,
-      total_preguntas: c._count.tbl_t_pregunta,
-      configuracion: c.configuracion,
-      fecha_creacion: c.fecha_creacion,
-    })),
-    meta: { total, page, limit, total_pages: Math.ceil(total / limit) },
-  };
-};
-
-const getById = async (usuarioId, pruebaId) => {
-  const profesor = await getProfesorOrFail(usuarioId);
-  await assertOwnership(pruebaId, profesor);
-
-  const prueba = await cuestionarioRepository.findByIdWithPreguntas(pruebaId);
-  return prueba;
-};
-
-const create = async (usuarioId, body) => {
-  const profesor = await getProfesorOrFail(usuarioId);
-  const { titulo, descripcion, profesor_materia_id, configuracion, preguntas = [] } = body;
-
-  if (!titulo) throw new AppError('El título es requerido', 400);
-  if (!profesor_materia_id) throw new AppError('El id de asignación materia-profesor es requerido', 400);
-  if (preguntas.length < 1) throw new AppError('Se requiere al menos 1 pregunta', 400);
-  if (preguntas.length > 20) throw new AppError('Máximo 20 preguntas permitidas', 400);
-
-  // Verificar que la asignación pertenece al profesor
-  const pm = await prisma.tbl_t_profesor_materia.findFirst({
-    where: { id_profesor_materia: parseInt(profesor_materia_id, 10), profesor_id: profesor.id_profesor, estado: true },
-  });
-  if (!pm) throw new AppError('Asignación materia-profesor no válida', 400);
-
-  // Validar que cada pregunta tenga al menos 2 opciones y exactamente 1 correcta
-  for (const [i, pregunta] of preguntas.entries()) {
-    if (!pregunta.texto) throw new AppError(`La pregunta ${i + 1} debe tener texto`, 400);
-    const opciones = pregunta.opciones || [];
-    if (opciones.length < 2) throw new AppError(`La pregunta ${i + 1} debe tener al menos 2 opciones`, 400);
-    const correctas = opciones.filter((o) => o.es_correcta);
-    if (correctas.length !== 1) throw new AppError(`La pregunta ${i + 1} debe tener exactamente 1 opción correcta`, 400);
+class CuestionarioService {
+  async #getProfesorOrFail(usuarioId) {
+    logger.debug('Looking up profesor by usuario', { usuarioId });
+    const profesor = await prisma.tbl_m_profesor.findUnique({
+      where: { usuario_id: usuarioId, estado: true },
+    });
+    if (!profesor) {
+      logger.warn('Profesor not found', { usuarioId });
+      throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
+    }
+    return profesor;
   }
 
-  const prueba = await prisma.$transaction(async (tx) => {
-    const nuevaPrueba = await tx.tbl_t_prueba.create({
-      data: {
-        titulo,
-        descripcion: descripcion || null,
-        configuracion: configuracion || null,
-        profesor_materia_id: pm.id_profesor_materia,
-        usuario_creacion: usuarioId,
+  async #validateProfesorExists(profesorId) {
+    logger.debug('Validating profesor exists', { profesorId });
+    const profesor = await prisma.tbl_m_profesor.findUnique({
+      where: { id_profesor: profesorId, estado: true },
+    });
+    if (!profesor) {
+      logger.warn('Profesor not found', { profesorId });
+      throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
+    }
+    return profesor;
+  }
+
+  async #assertOwnership(pruebaId, profesor) {
+    logger.debug('Asserting cuestionario ownership', { pruebaId, profesorId: profesor.id_profesor });
+    const profesorMateriaIds = await CuestionarioRepository.findProfesorMateriasIds(profesor.id_profesor);
+
+    const prueba = await prisma.tbl_t_prueba.findFirst({
+      where: {
+        id_prueba: pruebaId,
+        profesor_materia_id: { in: profesorMateriaIds },
+        estado: true,
       },
     });
+    if (!prueba) {
+      logger.warn('Cuestionario ownership assertion failed', { pruebaId, profesorId: profesor.id_profesor });
+      throw new AppError('Cuestionario no encontrado o sin acceso', 404, 'CUESTIONARIO_NOT_FOUND');
+    }
+    return prueba;
+  }
 
-    for (const pregunta of preguntas) {
-      const nuevaPregunta = await tx.tbl_t_pregunta.create({
-        data: {
-          prueba_id: nuevaPrueba.id_prueba,
-          texto: pregunta.texto,
-          tipo: pregunta.tipo || 'single_choice',
-          cooldown: pregunta.cooldown ?? 5,
-          tiempo_limite: pregunta.tiempo_limite ?? 30,
-          image_url: pregunta.image_url || null,
-          audio_url: pregunta.audio_url || null,
-          video_url: pregunta.video_url || null,
-          usuario_creacion: usuarioId,
-        },
+  async #findActiveProfesorMateria(profesorId, materiaId) {
+    const pm = await prisma.tbl_t_profesor_materia.findFirst({
+      where: {
+        profesor_id: profesorId,
+        materia_id: parseInt(materiaId, 10),
+        estado: true,
+        tbl_m_periodo_lectivo: { es_activo: true },
+      },
+    });
+    if (!pm) {
+      throw new AppError(
+        'No tienes una asignación activa para esta materia en el período actual',
+        400,
+        'NO_ACTIVE_ASSIGNMENT',
+      );
+    }
+    return pm;
+  }
+
+  async getAll(usuarioId, { page, limit, materia_id }) {
+    logger.info('Fetching cuestionarios', { usuarioId, page, limit, materia_id });
+    try {
+      const profesor = await this.#getProfesorOrFail(usuarioId);
+      const profesorMateriaIds = await CuestionarioRepository.findProfesorMateriasIds(
+        profesor.id_profesor,
+        materia_id,
+      );
+
+      if (profesorMateriaIds.length === 0) {
+        return CuestionarioMapper.toListResponse([], { total: 0, page, limit, total_pages: 0 });
+      }
+
+      const skip = (page - 1) * limit;
+      const [total, cuestionarios] = await Promise.all([
+        CuestionarioRepository.countByMateriaIds(profesorMateriaIds),
+        CuestionarioRepository.findPaginated(profesorMateriaIds, skip, limit),
+      ]);
+
+      logger.info('Cuestionarios fetched', { usuarioId, total, page, limit });
+      return CuestionarioMapper.toListResponse(cuestionarios, {
+        total,
+        page,
+        limit,
+        total_pages: Math.ceil(total / limit),
       });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error fetching cuestionarios', { usuarioId, error: error.message });
+      throw error;
+    }
+  }
 
-      for (const [idx, opcion] of (pregunta.opciones || []).entries()) {
-        await tx.tbl_t_opcion.create({
+  async getById(usuarioId, pruebaId) {
+    logger.info('Fetching cuestionario by id', { usuarioId, pruebaId });
+    try {
+      const profesor = await this.#getProfesorOrFail(usuarioId);
+      await this.#assertOwnership(pruebaId, profesor);
+      const prueba = await CuestionarioRepository.findByIdWithPreguntas(pruebaId);
+      logger.info('Cuestionario fetched by id', { usuarioId, pruebaId });
+      return CuestionarioMapper.toDetailResponse(prueba);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error fetching cuestionario by id', { usuarioId, pruebaId, error: error.message });
+      throw error;
+    }
+  }
+
+  async create(profesorId, body) {
+    const { esIA, materia_id, title, descripcion, configuracion, questions = [] } = body;
+    logger.info('Creating cuestionario', { profesorId, materia_id, esIA, title });
+    try {
+      const profesor = await this.#validateProfesorExists(profesorId);
+      if (!materia_id) throw new AppError('El id de la materia es requerido', 400, 'MATERIA_ID_REQUIRED');
+      if (!title) throw new AppError('El título es requerido', 400, 'TITULO_REQUIRED');
+      if (questions.length < 1) throw new AppError('Se requiere al menos 1 pregunta', 400, 'MIN_PREGUNTAS');
+      if (questions.length > 20) throw new AppError('Máximo 20 preguntas permitidas', 400, 'MAX_PREGUNTAS');
+
+      const pm = await this.#findActiveProfesorMateria(profesor.id_profesor, materia_id);
+
+      let createDescripcion = descripcion || (esIA ? 'IA' : null);
+
+      for (const [i, q] of questions.entries()) {
+        const num = i + 1;
+        if (!q.question || typeof q.question !== 'string' || !q.question.trim()) {
+          throw new AppError(`La pregunta ${num} debe tener texto`, 400, 'PREGUNTA_TEXTO_REQUIRED');
+        }
+        if (!Array.isArray(q.options) || q.options.length < 2) {
+          throw new AppError(`La pregunta ${num} debe tener al menos 2 respuestas`, 400, 'MIN_OPCIONES');
+        }
+        if (!Array.isArray(q.solutions) || q.solutions.length < 1) {
+          throw new AppError(`La pregunta ${num} debe tener al menos 1 respuesta correcta`, 400, 'UNA_CORRECTA');
+        }
+        for (const solutionIdx of q.solutions) {
+          if (typeof solutionIdx !== 'number' || solutionIdx < 0 || solutionIdx >= q.options.length) {
+            throw new AppError(`El índice de solución de la pregunta ${num} es inválido`, 400, 'SOLUCION_INVALIDA');
+          }
+        }
+        if (typeof q.time !== 'number' || q.time <= 0) {
+          throw new AppError(`La pregunta ${num} debe tener un tiempo límite válido`, 400, 'TIEMPO_INVALIDO');
+        }
+        if (typeof q.cooldown !== 'number' || q.cooldown < 0 || !Number.isInteger(q.cooldown)) {
+          throw new AppError(`La pregunta ${num} debe tener un cooldown válido`, 400, 'COOLDOWN_INVALIDO');
+        }
+      }
+
+      const prueba = await prisma.$transaction(async (tx) => {
+        const nuevaPrueba = await tx.tbl_t_prueba.create({
           data: {
-            pregunta_id: nuevaPregunta.id_pregunta,
-            texto: opcion.texto,
-            orden: opcion.orden ?? idx + 1,
-            es_correcta: opcion.es_correcta ?? false,
-            usuario_creacion: usuarioId,
+            titulo: title,
+            descripcion: createDescripcion || null,
+            configuracion: configuracion || null,
+            profesor_materia_id: pm.id_profesor_materia,
+            usuario_creacion: profesor.usuario_id,
           },
         });
-      }
-    }
 
-    return nuevaPrueba;
-  });
-
-  return cuestionarioRepository.findByIdWithPreguntas(prueba.id_prueba);
-};
-
-const update = async (usuarioId, pruebaId, body) => {
-  const profesor = await getProfesorOrFail(usuarioId);
-  await assertOwnership(pruebaId, profesor);
-
-  const { titulo, descripcion, configuracion, preguntas } = body;
-
-  await prisma.$transaction(async (tx) => {
-    await tx.tbl_t_prueba.update({
-      where: { id_prueba: pruebaId },
-      data: {
-        ...(titulo && { titulo }),
-        ...(descripcion !== undefined && { descripcion }),
-        ...(configuracion !== undefined && { configuracion }),
-        usuario_modificacion: usuarioId,
-        fecha_modificacion: new Date(),
-      },
-    });
-
-    if (preguntas && Array.isArray(preguntas)) {
-      for (const pregunta of preguntas) {
-        if (pregunta.id_pregunta) {
-          // Actualizar pregunta existente
-          await tx.tbl_t_pregunta.update({
-            where: { id_pregunta: pregunta.id_pregunta },
+        for (const q of questions) {
+          const correctIdx = q.solutions[0];
+          const nuevaPregunta = await tx.tbl_t_pregunta.create({
             data: {
-              texto: pregunta.texto,
-              tipo: pregunta.tipo,
-              cooldown: pregunta.cooldown,
-              tiempo_limite: pregunta.tiempo_limite,
-              image_url: pregunta.image_url || null,
-              audio_url: pregunta.audio_url || null,
-              video_url: pregunta.video_url || null,
-              usuario_modificacion: usuarioId,
-              fecha_modificacion: new Date(),
+              prueba_id: nuevaPrueba.id_prueba,
+              texto: q.question.trim(),
+              tipo: 'single_choice',
+              cooldown: q.cooldown,
+              tiempo_limite: q.time,
+              image_url: q.image || null,
+              usuario_creacion: profesor.usuario_id,
             },
           });
 
-          if (pregunta.opciones && Array.isArray(pregunta.opciones)) {
-            for (const opcion of pregunta.opciones) {
-              if (opcion.id_opcion) {
-                await tx.tbl_t_opcion.update({
-                  where: { id_opcion: opcion.id_opcion },
+          for (const [idx, texto] of q.options.entries()) {
+            await tx.tbl_t_opcion.create({
+              data: {
+                pregunta_id: nuevaPregunta.id_pregunta,
+                texto,
+                orden: idx + 1,
+                es_correcta: idx === correctIdx,
+                usuario_creacion: profesor.usuario_id,
+              },
+            });
+          }
+        }
+
+        return nuevaPrueba;
+      });
+
+      logger.info('Cuestionario created', { profesorId, pruebaId: prueba.id_prueba, preguntasCount: questions.length, esIA: !!esIA, descripcion: createDescripcion });
+      return CuestionarioRepository.findByIdWithPreguntas(prueba.id_prueba);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error creating cuestionario', { profesorId, error: error.message });
+      throw error;
+    }
+  }
+
+  async update(usuarioId, pruebaId, body) {
+    logger.info('Updating cuestionario', { usuarioId, pruebaId });
+    try {
+      const profesor = await this.#getProfesorOrFail(usuarioId);
+      await this.#assertOwnership(pruebaId, profesor);
+
+      const { titulo, descripcion, configuracion, questions } = body;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.tbl_t_prueba.update({
+          where: { id_prueba: pruebaId },
+          data: {
+            ...(titulo && { titulo }),
+            ...(descripcion !== undefined && { descripcion }),
+            ...(configuracion !== undefined && { configuracion }),
+            usuario_modificacion: profesor.usuario_id,
+            fecha_modificacion: new Date(),
+          },
+        });
+
+        if (questions && Array.isArray(questions)) {
+          for (const q of questions) {
+            if (q.id) {
+              const correctIdx = q.solutions ? q.solutions[0] : 0;
+              await tx.tbl_t_pregunta.update({
+                where: { id_pregunta: q.id },
+                data: {
+                  texto: q.question,
+                  cooldown: q.cooldown,
+                  tiempo_limite: q.time,
+                  image_url: q.image || null,
+                  usuario_modificacion: profesor.usuario_id,
+                  fecha_modificacion: new Date(),
+                },
+              });
+
+              if (q.options && Array.isArray(q.options)) {
+                const existingOptions = await tx.tbl_t_opcion.findMany({
+                  where: { pregunta_id: q.id },
+                  orderBy: { orden: 'asc' },
+                });
+
+                for (const [idx, texto] of q.options.entries()) {
+                  if (existingOptions[idx]) {
+                    await tx.tbl_t_opcion.update({
+                      where: { id_opcion: existingOptions[idx].id_opcion },
+                      data: {
+                        texto,
+                        orden: idx + 1,
+                        es_correcta: idx === correctIdx,
+                      },
+                    });
+                  }
+                }
+              }
+            } else {
+              const correctIdx = q.solutions ? q.solutions[0] : 0;
+              const nuevaPregunta = await tx.tbl_t_pregunta.create({
+                data: {
+                  prueba_id: pruebaId,
+                  texto: q.question.trim(),
+                  tipo: 'single_choice',
+                  cooldown: q.cooldown ?? 5,
+                  tiempo_limite: q.time ?? 30,
+                  image_url: q.image || null,
+                  usuario_creacion: profesor.usuario_id,
+                },
+              });
+
+              for (const [idx, texto] of (q.options || []).entries()) {
+                await tx.tbl_t_opcion.create({
                   data: {
-                    texto: opcion.texto,
-                    orden: opcion.orden,
-                    es_correcta: opcion.es_correcta,
+                    pregunta_id: nuevaPregunta.id_pregunta,
+                    texto,
+                    orden: idx + 1,
+                    es_correcta: idx === correctIdx,
+                    usuario_creacion: profesor.usuario_id,
                   },
                 });
               }
             }
           }
-        } else {
-          // Nueva pregunta
-          const nuevaPregunta = await tx.tbl_t_pregunta.create({
-            data: {
-              prueba_id: pruebaId,
-              texto: pregunta.texto,
-              tipo: pregunta.tipo || 'single_choice',
-              cooldown: pregunta.cooldown ?? 5,
-              tiempo_limite: pregunta.tiempo_limite ?? 30,
-              image_url: pregunta.image_url || null,
-              audio_url: pregunta.audio_url || null,
-              video_url: pregunta.video_url || null,
-              usuario_creacion: usuarioId,
-            },
-          });
-
-          for (const [idx, opcion] of (pregunta.opciones || []).entries()) {
-            await tx.tbl_t_opcion.create({
-              data: {
-                pregunta_id: nuevaPregunta.id_pregunta,
-                texto: opcion.texto,
-                orden: opcion.orden ?? idx + 1,
-                es_correcta: opcion.es_correcta ?? false,
-                usuario_creacion: usuarioId,
-              },
-            });
-          }
         }
-      }
+      });
+
+      logger.info('Cuestionario updated', { usuarioId, pruebaId });
+      return CuestionarioRepository.findByIdWithPreguntas(pruebaId);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error updating cuestionario', { usuarioId, pruebaId, error: error.message });
+      throw error;
     }
-  });
+  }
 
-  return cuestionarioRepository.findByIdWithPreguntas(pruebaId);
-};
+  async remove(usuarioId, pruebaId) {
+    logger.info('Removing cuestionario', { usuarioId, pruebaId });
+    try {
+      const profesor = await this.#getProfesorOrFail(usuarioId);
+      await this.#assertOwnership(pruebaId, profesor);
 
-const remove = async (usuarioId, pruebaId) => {
-  const profesor = await getProfesorOrFail(usuarioId);
-  await assertOwnership(pruebaId, profesor);
+      await prisma.tbl_t_prueba.update({
+        where: { id_prueba: pruebaId },
+        data: { estado: false, usuario_modificacion: profesor.usuario_id, fecha_modificacion: new Date() },
+      });
 
-  await prisma.tbl_t_prueba.update({
-    where: { id_prueba: pruebaId },
-    data: { estado: false, usuario_modificacion: usuarioId, fecha_modificacion: new Date() },
-  });
-};
+      logger.info('Cuestionario removed', { usuarioId, pruebaId });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error removing cuestionario', { usuarioId, pruebaId, error: error.message });
+      throw error;
+    }
+  }
+}
 
-module.exports = { getAll, getById, create, update, remove };
+module.exports = new CuestionarioService();
