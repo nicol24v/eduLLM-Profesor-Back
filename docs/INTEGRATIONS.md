@@ -2,9 +2,9 @@
 
 # Integraciones — Profesor MS
 
-> **Nota para IA:** Este microservicio no valida JWT propio. Toda la autenticación y enrutamiento se delega al Gateway. Nunca llames directamente a este servicio desde el frontend — usa siempre el Gateway.
+> **Nota para IA:** En producción, la autenticación y el enrutamiento se delegan al Gateway. Sin embargo, el microservicio incluye un **fallback JWT** para desarrollo directo (Bruno, tests) sin necesidad del Gateway.
 
-## Gateway (Spring Cloud Gateway — Puerto 8089)
+## Gateway (Spring Cloud Gateway — Puerto 8085)
 
 **Función:** Punto de entrada único del ecosistema. Valida el JWT, inyecta headers de contexto y redirige las peticiones al microservicio correspondiente.
 
@@ -27,11 +27,29 @@ spring:
           uri: http://rol-profesor-ms:8085
           predicates:
             - Path=/api/profesor/**
+      default-filters:
+        - RemoveRequestHeader=X-User-Id
+        - RemoveRequestHeader=X-User-Role
+        - RemoveRequestHeader=X-Username
+        - RemoveRequestHeader=X-User-Name
 ```
 
 > El nombre `rol-profesor-ms` debe coincidir con `container_name` en `docker-compose.yml`.
 
 **CORS:** El Gateway gestiona CORS de forma centralizada. Este microservicio no configura CORS.
+
+---
+
+## Acceso directo (desarrollo)
+
+El microservicio acepta llamadas directas (sin Gateway) decodificando el JWT del header `Authorization: Bearer <token>` o la cookie `jwtToken`:
+
+```bash
+curl -X GET http://localhost:8085/api/profesor/materias \
+  -H "Authorization: Bearer <JWT>"
+```
+
+Esto permite probar endpoints desde Bruno/Postman sin levantar todo el ecosistema. En producción, las peticiones deben pasar siempre por el Gateway.
 
 ---
 

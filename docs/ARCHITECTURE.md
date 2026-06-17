@@ -35,23 +35,28 @@ Request HTTP
     ▼
 [ Middlewares globales ]
     helmet · rateLimit · logRequest · cookieParser
-    authMiddleware (lee X-User-Id, X-User-Role, X-Username)
+    authMiddleware (X-User-* headers o JWT fallback, resuelve usuario no profesor)
     globalSanitizer
     │
     ▼
 [ Routes /api/profesor/* ]
-    requireProfesor (verifica rol)
+    requireProfesor (verifica rol, normaliza ROLE_ prefijo)
     │
     ▼
 [ Controller ]
     Extrae params/body · llama al Service · devuelve JSON
     │
     ▼
-[ Service ]
+[ Service (class) ]
     Lógica de negocio · validaciones · transacciones Prisma
+    Métodos privados (#getProfesorOrFail, #validateProfesorExists, #assertOwnership, #findActiveProfesorMateria)
     │
     ▼
-[ Repository ]
+[ Mapper ]
+    Transformación DB→API (static methods)
+    │
+    ▼
+[ Repository (class) ]
     Queries Prisma reutilizables (findByIdWithPreguntas, findResultados…)
     │
     ▼
@@ -62,10 +67,10 @@ Request HTTP
 
 | Módulo | Archivos | Responsabilidad |
 |--------|----------|-----------------|
-| `dashboard` | `dashboard.controller.js`, `dashboard.service.js` | Estadísticas HU9, datos de gráficas HU16 |
-| `cuestionario` | `cuestionario.controller.js`, `cuestionario.service.js`, `cuestionario.repository.js` | CRUD cuestionarios HU10-HU12, generación IA HU11 |
-| `partida` | `partida.controller.js`, `partida.service.js`, `partida.repository.js` | Sesiones de quiz HU13, resultados HU14, historial HU15 |
-| `materia` | `materia.controller.js`, `materia.service.js`, `materia.repository.js` | Materias asignadas al profesor |
+| `dashboard` | `dashboard.controller.js`, `dashboard.service.js`, `dashboard.mapper.js` | Estadísticas HU9, datos de gráficas HU16 |
+| `cuestionario` | `cuestionario.controller.js`, `cuestionario.service.js`, `cuestionario.repository.js`, `cuestionario.mapper.js` | CRUD cuestionarios HU10-HU12, generación IA HU11 |
+| `partida` | `partida.controller.js`, `partida.service.js`, `partida.repository.js`, `partida.mapper.js` | Sesiones de quiz HU13, resultados HU14, historial HU15 |
+| `materia` | `materia.controller.js`, `materia.service.js`, `materia.repository.js`, `materia.mapper.js` | Materias asignadas al profesor |
 | `socket` | `socket/socket.js` | Socket.io HU13: eventos tiempo real, estado en memoria |
 | `middlewares` | `auth`, `requireProfesor`, `errorHandler`, `sanitize`, `logger` | Seguridad y transversales |
 
@@ -99,7 +104,7 @@ Request HTTP
 ```json
 {
   "titulo": "Fracciones",
-  "profesor_materia_id": 3,
+  "materia_id": 3,
   "preguntas": [
     {
       "texto": "¿Cuánto es 1/2 + 1/4?",
@@ -114,7 +119,7 @@ Request HTTP
 ```
 
 1. `cuestionarioService.create(usuarioId, body)`:
-   - Verifica que `profesor_materia_id` pertenece al profesor autenticado
+   - Busca `tbl_t_profesor_materia` activa por `profesor_id + materia_id + periodo_lectivo_activo`
    - Valida: `titulo` requerido, 1–20 preguntas, cada pregunta con ≥2 opciones y exactamente 1 correcta
 2. Abre **transacción Prisma**:
    - Crea `tbl_t_prueba`
@@ -126,20 +131,16 @@ Request HTTP
 
 ---
 
-### Flujo HU11 — Crear cuestionario con IA
+### Flujo HU11 — Crear cuestionario con IA (integrado en POST /cuestionarios)
 
-**Entrada:** `POST /api/profesor/cuestionarios/ia`
+El endpoint único `POST /api/profesor/cuestionarios` acepta un flag `esIA`. El body es idéntico al manual, solo cambia el flag:
 
 ```json
-{ "tema": "Sistema solar", "profesor_materia_id": 3, "cantidad_preguntas": 5 }
+{ "materia_id": 3, "titulo": "Sistema solar", "esIA": true, "preguntas": [...] }
 ```
 
-1. Valida `tema` y `profesor_materia_id`
-2. Hace `fetch POST` a `RAG_SERVICE_URL/api/rag/generate-quiz` con `{ tema, materia, cantidad_preguntas }`
-3. Si el RAG responde con el cuestionario generado → lo pasa a `create()` del mismo servicio
-4. Se persiste igual que HU10
-
-**Dependencia externa:** ms-rag en `RAG_SERVICE_URL`. Si no está disponible → `503`.
+1. Las preguntas llegan ya generadas desde el frontend
+2. El backend guarda `descripcion = "IA"` en la prueba para identificar su origen
 
 ---
 
@@ -197,7 +198,11 @@ Profesor                    Servidor                    Estudiantes
 
 | Decisión | Razón |
 |----------|-------|
-| Auth por headers del Gateway | El Gateway ya valida el JWT; el microservicio solo lee `X-User-Id/Role/Username` — sin dependencia de JWT propio |
+| Auth resuelve `usuario_id`, no `profesor_id` | POST/PUT usan `req.user.id_usuario` para buscar el profesor por `usuario_id`; GET/DELETE reciben `profesor_id` explícito en query param |
+| `profesor_id` en query para GET | Los endpoints de consulta requieren `profesor_id` para identificar qué profesor; los de creación lo resuelven del auth |
+| Servicios y repositorios como clases (OOP) | Consistente con el patrón del Admin Backend; permite métodos privados `#` y mejor encapsulación |
+| Mappers como capa independiente | Separa transformación DB→API de la lógica de negocio; static methods sin estado |
+| `materia_id` en lugar de `profesor_materia_id` | El frontend no necesita conocer la asignación interna; el backend la resuelve automáticamente |
 | Socket.io en mismo puerto HTTP | Simplifica docker-compose y gateway; no requiere puerto adicional |
 | Estado de sesión en Map (memoria) | Suficiente para instancia única; se pierde en restart pero el quiz se puede reiniciar |
 | `requireProfesor` como middleware separado | Permite reusar en todas las rutas sin repetir lógica |

@@ -1,112 +1,95 @@
 const prisma = require('../config/prisma');
 const AppError = require('../utils/AppError');
+const logger = require('../config/logger');
+const MateriaRepository = require('../repositories/materia.repository');
+const MateriaMapper = require('../mappers/materia.mapper');
 
-const getProfesorOrFail = async (usuarioId) => {
-  const profesor = await prisma.tbl_m_profesor.findUnique({
-    where: { usuario_id: usuarioId, estado: true },
-  });
-  if (!profesor) throw new AppError('Profesor no encontrado', 404);
-  return profesor;
-};
+class MateriaService {
+  async #validateProfesorExists(profesorId) {
+    logger.debug('Validating profesor exists', { profesorId });
+    const profesor = await prisma.tbl_m_profesor.findUnique({
+      where: { id_profesor: profesorId, estado: true },
+    });
+    if (!profesor) {
+      logger.warn('Profesor not found', { profesorId });
+      throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
+    }
+    return profesor;
+  }
 
-const getMaterias = async (usuarioId) => {
-  const profesor = await getProfesorOrFail(usuarioId);
+  async getMaterias(profesorId) {
+    logger.info('Fetching materias for user', { profesorId });
+    try {
+      const profesor = await this.#validateProfesorExists(profesorId);
 
-  const profesorMaterias = await prisma.tbl_t_profesor_materia.findMany({
-    where: { profesor_id: profesor.id_profesor, estado: true },
-    include: {
-      tbl_m_materia: {
-        include: { tbl_m_grado: { select: { grado: true, paralelo: true } } },
-      },
-      tbl_m_periodo_lectivo: { select: { nombre: true, es_activo: true } },
-    },
-    orderBy: { fecha_asignacion: 'desc' },
-  });
+      const profesorMaterias = await MateriaRepository.findByProfesorId(profesor.id_profesor);
 
-  const result = await Promise.all(
-    profesorMaterias.map(async (pm) => {
-      const totalEstudiantes = await prisma.tbl_m_estudiante_materia.count({
-        where: { id_materia: pm.materia_id, estado: true },
-      });
-      const totalCuestionarios = await prisma.tbl_t_prueba.count({
-        where: { profesor_materia_id: pm.id_profesor_materia, estado: true },
-      });
-      return {
-        id_profesor_materia: pm.id_profesor_materia,
-        materia: {
-          id_materia: pm.tbl_m_materia.id_materia,
-          nombre: pm.tbl_m_materia.nombre,
-          descripcion: pm.tbl_m_materia.descripcion,
-          grado: pm.tbl_m_materia.tbl_m_grado
-            ? `${pm.tbl_m_materia.tbl_m_grado.grado}${pm.tbl_m_materia.tbl_m_grado.paralelo}`
-            : null,
+      const result = await Promise.all(
+        profesorMaterias.map(async (pm) => {
+          const totalEstudiantes = await prisma.tbl_m_estudiante_materia.count({
+            where: { id_materia: pm.materia_id, estado: true },
+          });
+          const totalCuestionarios = await prisma.tbl_t_prueba.count({
+            where: { profesor_materia_id: pm.id_profesor_materia, estado: true },
+          });
+          return MateriaMapper.toResponseWithCounts(pm, totalEstudiantes, totalCuestionarios);
+        }),
+      );
+
+      logger.info('Materias fetched successfully', { profesorId, count: result.length });
+      return result;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error fetching materias', { profesorId, error: error.message });
+      throw error;
+    }
+  }
+
+  async getMateriaById(profesorId, profesorMateriaId) {
+    logger.info('Fetching materia by id', { profesorId, profesorMateriaId });
+    try {
+      const profesor = await this.#validateProfesorExists(profesorId);
+
+      const pm = await prisma.tbl_t_profesor_materia.findFirst({
+        where: {
+          id_profesor_materia: profesorMateriaId,
+          profesor_id: profesor.id_profesor,
+          estado: true,
         },
-        periodo: pm.tbl_m_periodo_lectivo.nombre,
-        es_activo: pm.tbl_m_periodo_lectivo.es_activo,
-        total_estudiantes: totalEstudiantes,
-        total_cuestionarios: totalCuestionarios,
-      };
-    }),
-  );
-
-  return result;
-};
-
-const getMateriaById = async (usuarioId, profesorMateriaId) => {
-  const profesor = await getProfesorOrFail(usuarioId);
-
-  const pm = await prisma.tbl_t_profesor_materia.findFirst({
-    where: {
-      id_profesor_materia: profesorMateriaId,
-      profesor_id: profesor.id_profesor,
-      estado: true,
-    },
-    include: {
-      tbl_m_materia: {
-        include: { tbl_m_grado: { select: { grado: true, paralelo: true } } },
-      },
-      tbl_m_periodo_lectivo: true,
-    },
-  });
-
-  if (!pm) throw new AppError('Materia no encontrada o sin acceso', 404);
-
-  const estudiantes = await prisma.tbl_m_estudiante_materia.findMany({
-    where: { id_materia: pm.materia_id, estado: true },
-    include: {
-      tbl_m_estudiante: {
         include: {
-          tbl_m_usuario: {
-            select: { primer_nombre: true, segundo_nombre: true, apellido_paterno: true, correo: true },
+          tbl_m_materia: {
+            include: { tbl_m_grado: { select: { grado: true, paralelo: true } } },
+          },
+          tbl_m_periodo_lectivo: true,
+        },
+      });
+
+      if (!pm) {
+        logger.warn('Materia not found or no access', { profesorId, profesorMateriaId });
+        throw new AppError('Materia no encontrada o sin acceso', 404, 'MATERIA_NOT_FOUND');
+      }
+
+      const estudiantes = await prisma.tbl_m_estudiante_materia.findMany({
+        where: { id_materia: pm.materia_id, estado: true },
+        include: {
+          tbl_m_estudiante: {
+            include: {
+              tbl_m_usuario: {
+                select: { primer_nombre: true, segundo_nombre: true, apellido_paterno: true, correo: true },
+              },
+            },
           },
         },
-      },
-    },
-  });
+      });
 
-  return {
-    id_profesor_materia: pm.id_profesor_materia,
-    materia: {
-      id_materia: pm.tbl_m_materia.id_materia,
-      nombre: pm.tbl_m_materia.nombre,
-      descripcion: pm.tbl_m_materia.descripcion,
-      grado: pm.tbl_m_materia.tbl_m_grado
-        ? `${pm.tbl_m_materia.tbl_m_grado.grado}${pm.tbl_m_materia.tbl_m_grado.paralelo}`
-        : null,
-    },
-    periodo: {
-      nombre: pm.tbl_m_periodo_lectivo.nombre,
-      fecha_inicio: pm.tbl_m_periodo_lectivo.fecha_inicio,
-      fecha_fin: pm.tbl_m_periodo_lectivo.fecha_fin,
-      es_activo: pm.tbl_m_periodo_lectivo.es_activo,
-    },
-    estudiantes: estudiantes.map((e) => ({
-      id_estudiante_materia: e.id_estudiante_materia,
-      nombre: e.tbl_m_estudiante.tbl_m_usuario.primer_nombre,
-      apellido: e.tbl_m_estudiante.tbl_m_usuario.apellido_paterno,
-      correo: e.tbl_m_estudiante.tbl_m_usuario.correo,
-    })),
-  };
-};
+      logger.info('Materia fetched successfully', { profesorId, profesorMateriaId, estudiantesCount: estudiantes.length });
+      return MateriaMapper.toDetailResponse(pm, estudiantes);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error fetching materia by id', { profesorId, profesorMateriaId, error: error.message });
+      throw error;
+    }
+  }
+}
 
-module.exports = { getMaterias, getMateriaById };
+module.exports = new MateriaService();
