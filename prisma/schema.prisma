@@ -168,6 +168,7 @@ model tbl_t_opcion {
   texto            String
   orden            Int
   es_correcta      Boolean?          @default(false)
+  retroalimentacion String?          @db.Text
   fecha_creacion   DateTime?         @default(now()) @db.Timestamptz(6)
   usuario_creacion Int?
   estado           Boolean?          @default(true)

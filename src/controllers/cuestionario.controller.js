@@ -22,6 +22,7 @@ const getById = catchAsync(async (req, res) => {
 const create = catchAsync(async (req, res) => {
   const { profesor_id } = req.body;
   logger.info('Controller: create cuestionario', { profesor_id, title: req.body.title, esIA: req.body.esIA });
+  logger.debug(req.body)
   await cuestionarioService.create(parseInt(profesor_id, 10), req.body);
   res.status(201).json({ success: true, message: 'Cuestionario creado' });
 });

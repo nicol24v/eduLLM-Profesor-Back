@@ -115,20 +115,22 @@ class CuestionarioService {
   }
 
   async create(profesorId, body) {
-    const { esIA, materia_id, title, descripcion, configuracion, questions = [] } = body;
-    logger.info('Creating cuestionario', { profesorId, materia_id, esIA, title });
+    const { esIA, materia_id, title, titulo, descripcion, configuracion } = body;
+    const finalQuestions = this.#normalizeQuestions(body);
+    const finalTitle = title || titulo;
+    logger.info('Creating cuestionario', { profesorId, materia_id, esIA, title: finalTitle, questionsCount: finalQuestions.length });
     try {
       const profesor = await this.#validateProfesorExists(profesorId);
       if (!materia_id) throw new AppError('El id de la materia es requerido', 400, 'MATERIA_ID_REQUIRED');
-      if (!title) throw new AppError('El título es requerido', 400, 'TITULO_REQUIRED');
-      if (questions.length < 1) throw new AppError('Se requiere al menos 1 pregunta', 400, 'MIN_PREGUNTAS');
-      if (questions.length > 20) throw new AppError('Máximo 20 preguntas permitidas', 400, 'MAX_PREGUNTAS');
+      if (!finalTitle) throw new AppError('El campo "title" es requerido', 400, 'TITLE_REQUIRED');
+      if (finalQuestions.length < 1) throw new AppError('Se requiere al menos 1 pregunta', 400, 'MIN_PREGUNTAS');
+      if (finalQuestions.length > 20) throw new AppError('Máximo 20 preguntas permitidas', 400, 'MAX_PREGUNTAS');
 
       const pm = await this.#findActiveProfesorMateria(profesor.id_profesor, materia_id);
 
       let createDescripcion = descripcion || (esIA ? 'IA' : null);
 
-      for (const [i, q] of questions.entries()) {
+      for (const [i, q] of finalQuestions.entries()) {
         const num = i + 1;
         if (!q.question || typeof q.question !== 'string' || !q.question.trim()) {
           throw new AppError(`La pregunta ${num} debe tener texto`, 400, 'PREGUNTA_TEXTO_REQUIRED');
@@ -155,7 +157,7 @@ class CuestionarioService {
       const prueba = await prisma.$transaction(async (tx) => {
         const nuevaPrueba = await tx.tbl_t_prueba.create({
           data: {
-            titulo: title,
+            titulo: finalTitle,
             descripcion: createDescripcion || null,
             configuracion: configuracion || null,
             profesor_materia_id: pm.id_profesor_materia,
@@ -163,7 +165,7 @@ class CuestionarioService {
           },
         });
 
-        for (const q of questions) {
+        for (const q of finalQuestions) {
           const correctIdx = q.solutions[0];
           const nuevaPregunta = await tx.tbl_t_pregunta.create({
             data: {
@@ -184,6 +186,7 @@ class CuestionarioService {
                 texto,
                 orden: idx + 1,
                 es_correcta: idx === correctIdx,
+                retroalimentacion: q.feedback ? q.feedback[idx] : null,
                 usuario_creacion: profesor.usuario_id,
               },
             });
@@ -193,7 +196,7 @@ class CuestionarioService {
         return nuevaPrueba;
       });
 
-      logger.info('Cuestionario created', { profesorId, pruebaId: prueba.id_prueba, preguntasCount: questions.length, esIA: !!esIA, descripcion: createDescripcion });
+      logger.info('Cuestionario created', { profesorId, pruebaId: prueba.id_prueba, preguntasCount: finalQuestions.length, esIA: !!esIA, descripcion: createDescripcion });
       return CuestionarioRepository.findByIdWithPreguntas(prueba.id_prueba);
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -202,19 +205,39 @@ class CuestionarioService {
     }
   }
 
+  #normalizeQuestions(body) {
+    if (body.questions) return body.questions;
+    if (!body.preguntas) return [];
+    return body.preguntas.map((p) => {
+      const correctIdx = (p.opciones || []).findIndex((o) => o.es_correcta);
+      const n = {
+        question: p.texto,
+        options: (p.opciones || []).map((o) => o.texto),
+        feedback: (p.opciones || []).map((o) => o.retroalimentacion || null),
+        solutions: correctIdx >= 0 ? [correctIdx] : [0],
+        cooldown: p.cooldown ?? 5,
+        time: p.tiempo_limite ?? 30,
+        image: p.image_url || null,
+      };
+      if (p.id_pregunta) n.id = p.id_pregunta;
+      return n;
+    });
+  }
+
   async update(usuarioId, pruebaId, body) {
     logger.info('Updating cuestionario', { usuarioId, pruebaId });
     try {
       const profesor = await this.#getProfesorOrFail(usuarioId);
       await this.#assertOwnership(pruebaId, profesor);
 
-      const { titulo, descripcion, configuracion, questions } = body;
+      const { title, titulo, descripcion, configuracion } = body;
+      const questions = this.#normalizeQuestions(body);
 
       await prisma.$transaction(async (tx) => {
         await tx.tbl_t_prueba.update({
           where: { id_prueba: pruebaId },
           data: {
-            ...(titulo && { titulo }),
+            ...((title || titulo) && { titulo: title || titulo }),
             ...(descripcion !== undefined && { descripcion }),
             ...(configuracion !== undefined && { configuracion }),
             usuario_modificacion: profesor.usuario_id,
@@ -223,6 +246,28 @@ class CuestionarioService {
         });
 
         if (questions && Array.isArray(questions)) {
+          const incomingIds = questions.filter((q) => q.id).map((q) => q.id);
+
+          if (incomingIds.length > 0) {
+            await tx.tbl_t_opcion.updateMany({
+              where: { tbl_t_pregunta: { prueba_id: pruebaId, id_pregunta: { notIn: incomingIds } } },
+              data: { estado: false },
+            });
+            await tx.tbl_t_pregunta.updateMany({
+              where: { prueba_id: pruebaId, id_pregunta: { notIn: incomingIds } },
+              data: { estado: false, usuario_modificacion: profesor.usuario_id, fecha_modificacion: new Date() },
+            });
+          } else {
+            await tx.tbl_t_opcion.updateMany({
+              where: { pregunta: { prueba_id: pruebaId } },
+              data: { estado: false },
+            });
+            await tx.tbl_t_pregunta.updateMany({
+              where: { prueba_id: pruebaId },
+              data: { estado: false, usuario_modificacion: profesor.usuario_id, fecha_modificacion: new Date() },
+            });
+          }
+
           for (const q of questions) {
             if (q.id) {
               const correctIdx = q.solutions ? q.solutions[0] : 0;
@@ -239,22 +284,22 @@ class CuestionarioService {
               });
 
               if (q.options && Array.isArray(q.options)) {
-                const existingOptions = await tx.tbl_t_opcion.findMany({
+                await tx.tbl_t_opcion.updateMany({
                   where: { pregunta_id: q.id },
-                  orderBy: { orden: 'asc' },
+                  data: { estado: false },
                 });
 
                 for (const [idx, texto] of q.options.entries()) {
-                  if (existingOptions[idx]) {
-                    await tx.tbl_t_opcion.update({
-                      where: { id_opcion: existingOptions[idx].id_opcion },
-                      data: {
-                        texto,
-                        orden: idx + 1,
-                        es_correcta: idx === correctIdx,
-                      },
-                    });
-                  }
+                  await tx.tbl_t_opcion.create({
+                    data: {
+                      pregunta_id: q.id,
+                      texto,
+                      orden: idx + 1,
+                      es_correcta: idx === correctIdx,
+                      retroalimentacion: q.feedback ? q.feedback[idx] : null,
+                      usuario_creacion: profesor.usuario_id,
+                    },
+                  });
                 }
               }
             } else {
@@ -278,6 +323,7 @@ class CuestionarioService {
                     texto,
                     orden: idx + 1,
                     es_correcta: idx === correctIdx,
+                    retroalimentacion: q.feedback ? q.feedback[idx] : null,
                     usuario_creacion: profesor.usuario_id,
                   },
                 });

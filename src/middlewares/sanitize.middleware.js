@@ -38,6 +38,7 @@ const globalSanitizer = (req, _res, next) => {
 };
 
 const sanitizeCuestionario = [
+  body('title').trim().escape(),
   body('titulo').trim().escape(),
   body('descripcion').optional().trim().escape(),
 ];

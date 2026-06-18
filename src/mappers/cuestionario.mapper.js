@@ -25,6 +25,7 @@ class CuestionarioMapper {
       id_prueba: prueba.id_prueba,
       titulo: prueba.titulo,
       descripcion: prueba.descripcion,
+      profesor_materia_id: prueba.profesor_materia_id,
       configuracion: prueba.configuracion,
       tbl_t_profesor_materia: prueba.tbl_t_profesor_materia
         ? {
