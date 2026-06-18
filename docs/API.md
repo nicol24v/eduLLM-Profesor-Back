@@ -256,7 +256,7 @@ Cada pregunta en `questions` puede incluir `id` (existente) para actualizar, u o
 
 ```json
 {
-  "titulo": "Nuevo título",
+  "title": "Nuevo título",
   "questions": [
     { "id": 10, "question": "Texto actualizado", "options": ["3/4", "1/2"], "solutions": [0], "cooldown": 5, "time": 45 },
     { "question": "Nueva pregunta", "options": ["Sí", "No"], "solutions": [0], "cooldown": 5, "time": 20 }
