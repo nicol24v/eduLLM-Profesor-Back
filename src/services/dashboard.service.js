@@ -4,22 +4,22 @@ const logger = require('../config/logger');
 const DashboardMapper = require('../mappers/dashboard.mapper');
 
 class DashboardService {
-  async #validateProfesorExists(profesorId) {
-    logger.debug('Validating profesor exists', { profesorId });
+  async #getProfesorOrFail(usuarioId) {
+    logger.debug('Looking up profesor by usuario', { usuarioId });
     const profesor = await prisma.tbl_m_profesor.findUnique({
-      where: { id_profesor: profesorId, estado: true },
+      where: { usuario_id: usuarioId, estado: true },
     });
     if (!profesor) {
-      logger.warn('Profesor not found', { profesorId });
+      logger.warn('Profesor not found', { usuarioId });
       throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
     }
     return profesor;
   }
 
-  async getDashboardStats(profesorId) {
-    logger.info('Fetching dashboard stats', { profesorId });
+  async getDashboardStats(usuarioId) {
+    logger.info('Fetching dashboard stats', { usuarioId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
 
       const profesorMaterias = await prisma.tbl_t_profesor_materia.findMany({
         where: { profesor_id: profesor.id_profesor, estado: true },
@@ -60,7 +60,8 @@ class DashboardService {
       });
 
       logger.info('Dashboard stats fetched', {
-        profesorId,
+        usuarioId,
+        profesorId: profesor.id_profesor,
         totalMaterias: profesorMaterias.length,
         totalEstudiantes: estudiantesUnicos.length,
         totalCuestionarios: cuestionariosCount,
@@ -75,15 +76,15 @@ class DashboardService {
       });
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching dashboard stats', { profesorId, error: error.message });
+      logger.error('Error fetching dashboard stats', { usuarioId, error: error.message });
       throw error;
     }
   }
 
-  async getGraficas(profesorId) {
-    logger.info('Fetching dashboard graficas', { profesorId });
+  async getGraficas(usuarioId) {
+    logger.info('Fetching dashboard graficas', { usuarioId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
 
       const profesorMaterias = await prisma.tbl_t_profesor_materia.findMany({
         where: { profesor_id: profesor.id_profesor, estado: true },
@@ -107,7 +108,7 @@ class DashboardService {
       const partidaIds = partidas.map((p) => p.id_partida);
 
       if (partidaIds.length === 0) {
-        logger.info('No finalized partidas for graficas', { profesorId });
+        logger.info('No finalized partidas for graficas', { usuarioId, profesorId: profesor.id_profesor });
         return DashboardMapper.toGraficasResponse({
           barraHorizontal: [],
           barraVertical: [],
@@ -184,7 +185,7 @@ class DashboardService {
         else distribucion['81-100']++;
       });
 
-      logger.info('Dashboard graficas fetched', { profesorId, totalParticipaciones: participaciones.length });
+      logger.info('Dashboard graficas fetched', { usuarioId, profesorId: profesor.id_profesor, totalParticipaciones: participaciones.length });
 
       return DashboardMapper.toGraficasResponse({
         barraHorizontal,
@@ -193,7 +194,7 @@ class DashboardService {
       });
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching dashboard graficas', { profesorId, error: error.message });
+      logger.error('Error fetching dashboard graficas', { usuarioId, error: error.message });
       throw error;
     }
   }
