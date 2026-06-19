@@ -5,22 +5,22 @@ const MateriaRepository = require('../repositories/materia.repository');
 const MateriaMapper = require('../mappers/materia.mapper');
 
 class MateriaService {
-  async #validateProfesorExists(profesorId) {
-    logger.debug('Validating profesor exists', { profesorId });
+  async #getProfesorOrFail(usuarioId) {
+    logger.debug('Looking up profesor by usuario', { usuarioId });
     const profesor = await prisma.tbl_m_profesor.findUnique({
-      where: { id_profesor: profesorId, estado: true },
+      where: { usuario_id: usuarioId, estado: true },
     });
     if (!profesor) {
-      logger.warn('Profesor not found', { profesorId });
+      logger.warn('Profesor not found', { usuarioId });
       throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
     }
     return profesor;
   }
 
-  async getMaterias(profesorId) {
-    logger.info('Fetching materias for user', { profesorId });
+  async getMaterias(usuarioId) {
+    logger.info('Fetching materias for user', { usuarioId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
 
       const profesorMaterias = await MateriaRepository.findByProfesorId(profesor.id_profesor);
 
@@ -36,19 +36,19 @@ class MateriaService {
         }),
       );
 
-      logger.info('Materias fetched successfully', { profesorId, count: result.length });
+      logger.info('Materias fetched successfully', { usuarioId, count: result.length });
       return result;
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching materias', { profesorId, error: error.message });
+      logger.error('Error fetching materias', { usuarioId, error: error.message });
       throw error;
     }
   }
 
-  async getMateriaById(profesorId, profesorMateriaId) {
-    logger.info('Fetching materia by id', { profesorId, profesorMateriaId });
+  async getMateriaById(usuarioId, profesorMateriaId) {
+    logger.info('Fetching materia by id', { usuarioId, profesorMateriaId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
 
       const pm = await prisma.tbl_t_profesor_materia.findFirst({
         where: {
@@ -65,7 +65,7 @@ class MateriaService {
       });
 
       if (!pm) {
-        logger.warn('Materia not found or no access', { profesorId, profesorMateriaId });
+        logger.warn('Materia not found or no access', { usuarioId, profesorMateriaId });
         throw new AppError('Materia no encontrada o sin acceso', 404, 'MATERIA_NOT_FOUND');
       }
 
@@ -82,11 +82,11 @@ class MateriaService {
         },
       });
 
-      logger.info('Materia fetched successfully', { profesorId, profesorMateriaId, estudiantesCount: estudiantes.length });
+      logger.info('Materia fetched successfully', { usuarioId, profesorMateriaId, estudiantesCount: estudiantes.length });
       return MateriaMapper.toDetailResponse(pm, estudiantes);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching materia by id', { profesorId, profesorMateriaId, error: error.message });
+      logger.error('Error fetching materia by id', { usuarioId, profesorMateriaId, error: error.message });
       throw error;
     }
   }

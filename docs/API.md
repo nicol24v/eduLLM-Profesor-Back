@@ -2,7 +2,7 @@
 
 # API Reference — Profesor MS
 
-> **Nota para IA:** `profesor_id` va en body (POST/PUT) o query param (GET/DELETE). Es el ID de `tbl_m_profesor`.
+> **Nota para IA sobre `profesor_id`:** El Gateway inyecta `profesor_id` en query params con el valor de `id_usuario` (FK a `tbl_m_usuario`), no de `id_profesor`. El backend resuelve internamente el `id_profesor` real mediante `tbl_m_profesor.usuario_id`. En POST/PUT, los controladores usan `req.user.id_usuario` del middleware de autenticación.
 
 **Base URL:** `http://localhost:8085/api/profesor`
 
@@ -17,7 +17,7 @@ Estadísticas principales del panel docente (HU9).
 
 | Param | Tipo | Descripción |
 |-------|------|-------------|
-| `profesor_id` | `number` | ID del profesor en `tbl_m_profesor` |
+| `profesor_id` | `number` | `id_usuario` del profesor (lo inyecta el Gateway; el backend resuelve el `id_profesor` real mediante `tbl_m_profesor.usuario_id`) |
 
 **Respuesta 200:**
 ```json
