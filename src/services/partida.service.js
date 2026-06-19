@@ -18,18 +18,6 @@ class PartidaService {
     return profesor;
   }
 
-  async #validateProfesorExists(profesorId) {
-    logger.debug('Validating profesor exists', { profesorId });
-    const profesor = await prisma.tbl_m_profesor.findUnique({
-      where: { id_profesor: profesorId, estado: true },
-    });
-    if (!profesor) {
-      logger.warn('Profesor not found', { profesorId });
-      throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
-    }
-    return profesor;
-  }
-
   async #assertPartidaOwnership(partidaId, profesor) {
     logger.debug('Asserting partida ownership', { partidaId, profesorId: profesor.id_profesor });
     const profesorMateriaIds = await PartidaRepository.findProfesorMateriaIds(profesor.id_profesor);
@@ -53,10 +41,10 @@ class PartidaService {
     return partida;
   }
 
-  async getHistory(profesorId, { page, limit, prueba_id }) {
-    logger.info('Fetching partida history', { profesorId, page, limit, prueba_id });
+  async getHistory(usuarioId, { page, limit, prueba_id }) {
+    logger.info('Fetching partida history', { usuarioId, page, limit, prueba_id });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
 
       const profesorMateriaIds = await PartidaRepository.findProfesorMateriaIds(profesor.id_profesor);
       const pruebasIds = await PartidaRepository.findPruebaIdsByMateriaIds(profesorMateriaIds, prueba_id);
@@ -68,7 +56,7 @@ class PartidaService {
         PartidaRepository.findPaginated(pruebasIds, skip, limit),
       ]);
 
-      logger.info('Partida history fetched', { profesorId, total, page, limit });
+      logger.info('Partida history fetched', { usuarioId, total, page, limit });
       return PartidaMapper.toHistoryListResponse(partidas, {
         total,
         page,
@@ -77,27 +65,27 @@ class PartidaService {
       });
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching partida history', { profesorId, error: error.message });
+      logger.error('Error fetching partida history', { usuarioId, error: error.message });
       throw error;
     }
   }
 
-  async getById(profesorId, partidaId) {
-    logger.info('Fetching partida by id', { profesorId, partidaId });
+  async getById(usuarioId, partidaId) {
+    logger.info('Fetching partida by id', { usuarioId, partidaId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
       return await this.#assertPartidaOwnership(partidaId, profesor);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching partida by id', { profesorId, partidaId, error: error.message });
+      logger.error('Error fetching partida by id', { usuarioId, partidaId, error: error.message });
       throw error;
     }
   }
 
-  async create(profesorId, body) {
-    logger.info('Creating partida', { profesorId, prueba_id: body.prueba_id });
+  async create(usuarioId, body) {
+    logger.info('Creating partida', { usuarioId, prueba_id: body.prueba_id });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
       const { prueba_id } = body;
 
       if (!prueba_id) throw new AppError('El prueba_id es requerido', 400, 'PRUEBA_ID_REQUIRED');
@@ -135,35 +123,35 @@ class PartidaService {
         include: { tbl_t_prueba: { select: { titulo: true } } },
       });
 
-      logger.info('Partida created', { profesorId, partidaId: partida.id_partida, codigo_acceso: codigoAcceso });
+      logger.info('Partida created', { usuarioId, partidaId: partida.id_partida, codigo_acceso: codigoAcceso });
 
       return PartidaMapper.toCreatedResponse(partida, prueba.tbl_t_pregunta.length);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error creating partida', { profesorId, error: error.message });
+      logger.error('Error creating partida', { usuarioId, error: error.message });
       throw error;
     }
   }
 
-  async getResultados(profesorId, partidaId) {
-    logger.info('Fetching resultados for partida', { profesorId, partidaId });
+  async getResultados(usuarioId, partidaId) {
+    logger.info('Fetching resultados for partida', { usuarioId, partidaId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
       await this.#assertPartidaOwnership(partidaId, profesor);
       const resultados = await PartidaRepository.findResultados(partidaId);
-      logger.info('Resultados fetched', { profesorId, partidaId });
+      logger.info('Resultados fetched', { usuarioId, partidaId });
       return resultados;
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching resultados', { profesorId, partidaId, error: error.message });
+      logger.error('Error fetching resultados', { usuarioId, partidaId, error: error.message });
       throw error;
     }
   }
 
-  async getRanking(profesorId, partidaId) {
-    logger.info('Fetching ranking for partida', { profesorId, partidaId });
+  async getRanking(usuarioId, partidaId) {
+    logger.info('Fetching ranking for partida', { usuarioId, partidaId });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
       await this.#assertPartidaOwnership(partidaId, profesor);
 
       const participaciones = await prisma.tbl_t_partida_estudiante.findMany({
@@ -182,12 +170,12 @@ class PartidaService {
         orderBy: [{ puntaje_total: 'desc' }, { respuestas_correctas: 'desc' }],
       });
 
-      logger.info('Ranking fetched', { profesorId, partidaId, totalParticipantes: participaciones.length });
+      logger.info('Ranking fetched', { usuarioId, partidaId, totalParticipantes: participaciones.length });
 
       return PartidaMapper.toRankingResponse(participaciones);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error fetching ranking', { profesorId, partidaId, error: error.message });
+      logger.error('Error fetching ranking', { usuarioId, partidaId, error: error.message });
       throw error;
     }
   }

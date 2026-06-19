@@ -6,6 +6,14 @@ Formato: `[vX.Y.Z] — YYYY-MM-DD`
 
 ---
 
+## [v1.3.1] — 2026-06-18
+
+### Corregido
+- **DashboardService**: ahora resuelve `profesor_id` desde `tbl_m_profesor.usuario_id` en lugar de usar `id_profesor` directamente. El valor `profesor_id=2` que envía el Gateway es `id_usuario`, no `id_profesor`; se agrego `#getProfesorOrFail(usuarioId)` que busca por `usuario_id` y devuelve el registro de `tbl_m_profesor` con su `id_profesor` real para las consultas posteriores. Afecta `getDashboardStats` y `getGraficas`.
+
+### Modificado
+- `DashboardController`: la variable que recibe `profesor_id` del query ahora se llama `usuarioId` internamente para reflejar que es `id_usuario`.
+
 ## [v1.3.0] — 2026-06-16
 
 ### Modificado

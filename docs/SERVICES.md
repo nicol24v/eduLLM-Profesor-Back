@@ -10,7 +10,15 @@
 Controller → Service (class) → Mapper (static) → Repository (class) → Prisma
 ```
 
-Todos los métodos usan `#validateProfesorExists(profesorId)` — lookup por `id_profesor`. El `profesor_id` viene del request: body (POST/PUT) o query (GET/DELETE).
+El Gateway inyecta `profesor_id` en query params con el valor de `id_usuario`. Los servicios deben resolver el `id_profesor` real mediante `tbl_m_profesor.usuario_id`.  
+Para eso, los servicios disponen de dos métodos privados:
+
+| Método | Lookup | Uso |
+|--------|--------|-----|
+| `#getProfesorOrFail(usuarioId)` | `tbl_m_profesor` por `usuario_id` | POST/PUT y dashboard |
+| `#validateProfesorExists(profesorId)` | `tbl_m_profesor` por `id_profesor` | GET/DELETE (legado) |
+
+> ⚠️ **Importante:** El valor `profesor_id` que llega en query/body es `id_usuario`, no `id_profesor`. Siempre que sea posible, usar `#getProfesorOrFail(usuarioId)` para resolver correctamente.
 
 ---
 
@@ -20,8 +28,11 @@ Todos los métodos usan `#validateProfesorExists(profesorId)` — lookup por `id
 
 | Método | Descripción | Tablas leídas |
 |---------|-------------|---------------|
-| `getDashboardStats(profesorId)` | Total estudiantes, cuestionarios, materias y partidas pendientes | `tbl_m_profesor`, `tbl_t_profesor_materia`, `tbl_m_estudiante_materia`, `tbl_t_prueba`, `tbl_t_partida` |
-| `getGraficas(profesorId)` | Datos para 3 gráficas: barra horizontal (por alumno), barra vertical (por quiz), torta (distribución de puntajes) | + `tbl_t_partida_estudiante`, `tbl_m_usuario` |
+| `getDashboardStats(usuarioId)` | Total estudiantes, cuestionarios, materias y partidas pendientes | `tbl_m_profesor`, `tbl_t_profesor_materia`, `tbl_m_estudiante_materia`, `tbl_t_prueba`, `tbl_t_partida` |
+| `getGraficas(usuarioId)` | Datos para 3 gráficas: barra horizontal (por alumno), barra vertical (por quiz), torta (distribución de puntajes) | + `tbl_t_partida_estudiante`, `tbl_m_usuario` |
+
+**Métodos privados:**
+- `#getProfesorOrFail(usuarioId)` — busca `tbl_m_profesor` por `usuario_id` y resuelve el `id_profesor` real
 
 **Mapper:** `DashboardMapper` — transforma resultados agregados en formato para gráficas.
 

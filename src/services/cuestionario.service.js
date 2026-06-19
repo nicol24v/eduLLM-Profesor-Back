@@ -17,18 +17,6 @@ class CuestionarioService {
     return profesor;
   }
 
-  async #validateProfesorExists(profesorId) {
-    logger.debug('Validating profesor exists', { profesorId });
-    const profesor = await prisma.tbl_m_profesor.findUnique({
-      where: { id_profesor: profesorId, estado: true },
-    });
-    if (!profesor) {
-      logger.warn('Profesor not found', { profesorId });
-      throw new AppError('Profesor no encontrado', 404, 'PROFESOR_NOT_FOUND');
-    }
-    return profesor;
-  }
-
   async #assertOwnership(pruebaId, profesor) {
     logger.debug('Asserting cuestionario ownership', { pruebaId, profesorId: profesor.id_profesor });
     const profesorMateriaIds = await CuestionarioRepository.findProfesorMateriasIds(profesor.id_profesor);
@@ -114,13 +102,13 @@ class CuestionarioService {
     }
   }
 
-  async create(profesorId, body) {
+  async create(usuarioId, body) {
     const { esIA, materia_id, title, titulo, descripcion, configuracion } = body;
     const finalQuestions = this.#normalizeQuestions(body);
     const finalTitle = title || titulo;
-    logger.info('Creating cuestionario', { profesorId, materia_id, esIA, title: finalTitle, questionsCount: finalQuestions.length });
+    logger.info('Creating cuestionario', { usuarioId, materia_id, esIA, title: finalTitle, questionsCount: finalQuestions.length });
     try {
-      const profesor = await this.#validateProfesorExists(profesorId);
+      const profesor = await this.#getProfesorOrFail(usuarioId);
       if (!materia_id) throw new AppError('El id de la materia es requerido', 400, 'MATERIA_ID_REQUIRED');
       if (!finalTitle) throw new AppError('El campo "title" es requerido', 400, 'TITLE_REQUIRED');
       if (finalQuestions.length < 1) throw new AppError('Se requiere al menos 1 pregunta', 400, 'MIN_PREGUNTAS');
@@ -196,11 +184,11 @@ class CuestionarioService {
         return nuevaPrueba;
       });
 
-      logger.info('Cuestionario created', { profesorId, pruebaId: prueba.id_prueba, preguntasCount: finalQuestions.length, esIA: !!esIA, descripcion: createDescripcion });
+      logger.info('Cuestionario created', { usuarioId, pruebaId: prueba.id_prueba, preguntasCount: finalQuestions.length, esIA: !!esIA, descripcion: createDescripcion });
       return CuestionarioRepository.findByIdWithPreguntas(prueba.id_prueba);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Error creating cuestionario', { profesorId, error: error.message });
+      logger.error('Error creating cuestionario', { usuarioId, error: error.message });
       throw error;
     }
   }
