@@ -16,11 +16,15 @@ class JoinGameUseCase {
     this.#sqliteRepo = new SQLiteGameRepository();
   }
 
-  execute({ codigoAcceso, socketId, playerId, nickname }) {
+  async execute({ codigoAcceso, socketId, playerId, nickname }) {
     logger.info('UseCase: JoinGame', { codigoAcceso, playerId, nickname });
     try {
-      const room = this.#registry.findByCode(codigoAcceso);
-      if (!room) throw new AppError('Sala no encontrada', 404, 'SALA_NOT_FOUND');
+      let room = this.#registry.findByCode(codigoAcceso);
+      if (!room) {
+        const partidaService = require('../../services/partida.service');
+        room = await partidaService.reconstructRoom(codigoAcceso);
+        if (!room) throw new AppError('Sala no encontrada', 404, 'SALA_NOT_FOUND');
+      }
       if (room.status !== GameStatus.SHOW_ROOM) {
         throw new AppError('La partida ya ha comenzado', 400, 'GAME_ALREADY_STARTED');
       }

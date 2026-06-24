@@ -43,4 +43,36 @@ const getRanking = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
-module.exports = { getHistory, getById, create, getResultados, getRanking };
+const iniciar = catchAsync(async (req, res) => {
+  const usuarioId = req.user.id_usuario;
+  const partidaId = parseInt(req.params.id, 10);
+  logger.info('Controller: iniciar partida', { usuarioId, partidaId });
+  await partidaService.iniciar(usuarioId, partidaId);
+  res.json({ success: true });
+});
+
+const siguientePregunta = catchAsync(async (req, res) => {
+  const usuarioId = req.user.id_usuario;
+  const partidaId = parseInt(req.params.id, 10);
+  logger.info('Controller: siguientePregunta', { usuarioId, partidaId });
+  await partidaService.siguientePregunta(usuarioId, partidaId);
+  res.json({ success: true });
+});
+
+const finalizar = catchAsync(async (req, res) => {
+  const usuarioId = req.user.id_usuario;
+  const partidaId = parseInt(req.params.id, 10);
+  logger.info('Controller: finalizar', { usuarioId, partidaId });
+  const data = await partidaService.finalizar(usuarioId, partidaId);
+  res.json({ success: true, data });
+});
+
+const getByCodigo = catchAsync(async (req, res) => {
+  const usuarioId = req.user.id_usuario;
+  const { codigoAcceso } = req.params;
+  logger.info('Controller: getByCodigo', { usuarioId, codigoAcceso });
+  const data = await partidaService.getByCodigo(usuarioId, codigoAcceso);
+  res.json({ success: true, data });
+});
+
+module.exports = { getHistory, getById, create, getResultados, getRanking, getByCodigo, iniciar, siguientePregunta, finalizar };

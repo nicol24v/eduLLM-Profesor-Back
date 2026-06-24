@@ -26,6 +26,7 @@ class NextQuestionUseCase {
         GameStatus.SHOW_PREPARED,
         GameStatus.SHOW_RESPONSES,
         GameStatus.SHOW_LEADERBOARD,
+        GameStatus.SELECT_ANSWER,
       ];
       if (!allowedStatuses.includes(room.status)) {
         throw new AppError(`No se puede avanzar pregunta desde el estado ${room.status}`, 400, 'INVALID_STATUS');

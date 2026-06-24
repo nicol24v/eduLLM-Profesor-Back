@@ -26,7 +26,7 @@ class PartidaMapper {
       codigo_acceso: partida.codigo_acceso,
       estado_partida: partida.estado_partida,
       titulo_prueba: partida.tbl_t_prueba?.titulo,
-      total_preguntas,
+      total_preguntas: totalPreguntas,
       fecha_creacion: partida.fecha_creacion,
     };
   }

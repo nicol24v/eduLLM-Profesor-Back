@@ -34,6 +34,10 @@ class SubmitAnswerUseCase {
             correctAnswers: player.correctAnswers,
             answerTime: player.getAnswerTime(),
           });
+          const lastAnswer = player.answerHistory[player.answerHistory.length - 1];
+          if (lastAnswer) {
+            this.#sqliteRepo.saveAnswer(room.partidaId, playerId, lastAnswer);
+          }
         }
         logger.debug('UseCase: SubmitAnswer accepted', { codigoAcceso, playerId });
       }

@@ -65,7 +65,15 @@ class SQLiteGameRepository {
     `).run(score, correctAnswers, answerTime, playerId, partidaId);
   }
 
+  saveAnswer(partidaId, playerId, { preguntaId, opcionId, points, elapsedMs }) {
+    this.#db.prepare(`
+      INSERT INTO game_answers (partida_id, player_id, pregunta_id, opcion_id, points, elapsed_ms)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(partidaId, playerId, preguntaId, opcionId, points, elapsedMs);
+  }
+
   deleteRoom(partidaId) {
+    this.#db.prepare(`DELETE FROM game_answers WHERE partida_id = ?`).run(partidaId);
     this.#db.prepare(`DELETE FROM game_players WHERE partida_id = ?`).run(partidaId);
     this.#db.prepare(`DELETE FROM game_rooms WHERE partida_id = ?`).run(partidaId);
   }

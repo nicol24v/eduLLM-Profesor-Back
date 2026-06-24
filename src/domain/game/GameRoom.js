@@ -75,6 +75,7 @@ class GameRoom {
   openAnswers() {
     this.#answersClosed = false;
     this.#status = GameStatus.SELECT_ANSWER;
+    this.#questionStartedAt = Date.now();
   }
 
   closeAnswers() {
@@ -119,7 +120,7 @@ class GameRoom {
       elapsedMs: elapsed,
     });
 
-    player.recordAnswer(points);
+    player.recordAnswer({ opcionId, preguntaId: question.id_pregunta, points, elapsedMs: elapsed });
 
     return { accepted: true, isCorrect, points };
   }
@@ -169,6 +170,7 @@ class GameRoom {
       currentQuestionIndex: this.#currentQuestionIndex,
       totalQuestions: this.totalQuestions,
       playerCount: this.#players.size,
+      players: this.getPlayers().map((p) => p.toJSON()),
     };
   }
 }

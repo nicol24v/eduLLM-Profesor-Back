@@ -13,6 +13,7 @@ class SocketServer {
 
   constructor(httpServer) {
     this.#io = new Server(httpServer, {
+      path: '/game/socket.io',
       cors: {
         origin: '*',
         methods: ['GET', 'POST'],

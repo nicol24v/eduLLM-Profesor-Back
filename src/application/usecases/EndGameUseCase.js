@@ -27,13 +27,13 @@ class EndGameUseCase {
 
       room.transitionTo(GameStatus.FINISHED);
 
-      await this.#prismaRepo.finalizeGame(room);
+      const idPartidaEstudianteMap = await this.#prismaRepo.finalizeGame(room);
 
       this.#sqliteRepo.deleteRoom(partidaId);
       this.#registry.remove(room);
 
       logger.info('UseCase: EndGame completed', { partidaId });
-      return { leaderboard: room.getLeaderboard() };
+      return { leaderboard: room.getLeaderboard(), idPartidaEstudianteMap };
     } catch (error) {
       if (error instanceof AppError) throw error;
       logger.error('UseCase: EndGame error', { partidaId, error: error.message });
