@@ -15,6 +15,7 @@ COPY --chown=nodeuser:nodegroup . .
 RUN apk add --no-cache openssl
 RUN npm install -g nodemon
 
+COPY . .
 
 
 COPY package*.json ./

@@ -7,6 +7,7 @@ class GamePlayer {
   #score;
   #correctAnswers;
   #currentAnswerTime;
+  #answerHistory;
 
   constructor({ socketId, playerId, nickname }) {
     this.#socketId = socketId;
@@ -15,6 +16,7 @@ class GamePlayer {
     this.#score = 0;
     this.#correctAnswers = 0;
     this.#currentAnswerTime = null;
+    this.#answerHistory = [];
   }
 
   get socketId() { return this.#socketId; }
@@ -22,15 +24,17 @@ class GamePlayer {
   get nickname() { return this.#nickname; }
   get score() { return this.#score; }
   get correctAnswers() { return this.#correctAnswers; }
+  get answerHistory() { return [...this.#answerHistory]; }
 
   updateSocket(socketId) {
     this.#socketId = socketId;
   }
 
-  recordAnswer(points) {
+  recordAnswer({ opcionId, preguntaId, points, elapsedMs }) {
     this.#score += points;
     if (points > 0) this.#correctAnswers += 1;
     this.#currentAnswerTime = null;
+    this.#answerHistory.push({ opcionId, preguntaId, points, elapsedMs });
   }
 
   setAnswerTime(timestamp) {

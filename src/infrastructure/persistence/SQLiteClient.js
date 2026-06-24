@@ -48,6 +48,17 @@ class SQLiteClient {
         answer_time INTEGER,
         PRIMARY KEY (player_id, partida_id)
       );
+
+      CREATE TABLE IF NOT EXISTS game_answers (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        partida_id  INTEGER NOT NULL,
+        player_id   TEXT NOT NULL,
+        pregunta_id INTEGER NOT NULL,
+        opcion_id   INTEGER NOT NULL,
+        points      INTEGER NOT NULL DEFAULT 0,
+        elapsed_ms  INTEGER,
+        created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
     `);
   }
 }

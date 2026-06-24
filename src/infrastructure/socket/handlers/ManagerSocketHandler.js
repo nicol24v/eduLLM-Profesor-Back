@@ -150,9 +150,9 @@ class ManagerSocketHandler {
       const room = this.#registry.findByCode(codigoAcceso);
       if (!room) return ack?.({ ok: false, error: 'Sala no encontrada' });
 
-      const { leaderboard } = await this.#endGame.execute({ partidaId: room.partidaId });
+      const { leaderboard, idPartidaEstudianteMap } = await this.#endGame.execute({ partidaId: room.partidaId });
 
-      this.#io.to(`game:${codigoAcceso}`).emit('game:finished', { leaderboard });
+      this.#io.to(`game:${codigoAcceso}`).emit('game:finished', { leaderboard, idPartidaEstudianteMap });
 
       ack?.({ ok: true, data: { leaderboard } });
     } catch (err) {
@@ -186,10 +186,14 @@ class ManagerSocketHandler {
     }
   }
 
-  #onRejoin(socket, data, ack) {
+  async #onRejoin(socket, data, ack) {
     try {
       const { codigoAcceso } = data;
-      const room = this.#registry.findByCode(codigoAcceso);
+      let room = this.#registry.findByCode(codigoAcceso);
+      if (!room) {
+        const partidaService = require('../../../services/partida.service');
+        room = await partidaService.reconstructRoom(codigoAcceso);
+      }
       if (!room) return ack?.({ ok: false, error: 'Sala no encontrada' });
 
       room.updateManagerSocket(socket.id);

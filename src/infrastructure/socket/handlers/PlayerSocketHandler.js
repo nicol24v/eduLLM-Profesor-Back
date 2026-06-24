@@ -24,10 +24,10 @@ class PlayerSocketHandler {
     socket.on('player:leave', () => this.#onLeave(socket));
   }
 
-  #onJoin(socket, data, ack) {
+  async #onJoin(socket, data, ack) {
     try {
       const { codigoAcceso, playerId, nickname } = data;
-      const { room, player, reconnected } = this.#joinGame.execute({
+      const { room, player, reconnected } = await this.#joinGame.execute({
         codigoAcceso,
         socketId: socket.id,
         playerId,
@@ -52,6 +52,7 @@ class PlayerSocketHandler {
           status: room.status,
           playerCount: room.getPlayerCount(),
           titulo: room.prueba.titulo,
+          totalPreguntas: room.totalQuestions,
         },
       });
     } catch (err) {
