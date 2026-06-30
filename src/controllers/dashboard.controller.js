@@ -1,5 +1,6 @@
 const catchAsync = require('../utils/catchAsync');
 const dashboardService = require('../services/dashboard.service');
+const analiticaService = require('../services/analitica.service');
 const logger = require('../config/logger');
 
 const getStats = catchAsync(async (req, res) => {
@@ -16,4 +17,11 @@ const getGraficas = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
-module.exports = { getStats, getGraficas };
+const getAnalitica = catchAsync(async (req, res) => {
+  const usuarioId = req.user.id_usuario;
+  logger.info('Controller: getAnalitica', { usuarioId });
+  const data = await analiticaService.getAnalitica(usuarioId);
+  res.json({ success: true, data });
+});
+
+module.exports = { getStats, getGraficas, getAnalitica };
