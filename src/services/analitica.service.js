@@ -28,17 +28,18 @@ class AnaliticaService {
       const profesorMateriaIds = profesorMaterias.map((pm) => pm.id_profesor_materia);
 
       if (profesorMateriaIds.length === 0) {
-        return AnaliticaMapper.toAnaliticaResponse({ partidas: [] });
+        return AnaliticaMapper.toAnaliticaResponse({ partidas: [], respuestas: [], pruebaTituloMap: {} });
       }
 
       const pruebas = await prisma.tbl_t_prueba.findMany({
         where: { profesor_materia_id: { in: profesorMateriaIds }, estado: true },
-        select: { id_prueba: true },
+        select: { id_prueba: true, titulo: true },
       });
       const pruebaIds = pruebas.map((p) => p.id_prueba);
+      const pruebaTituloMap = Object.fromEntries(pruebas.map((p) => [p.id_prueba, p.titulo]));
 
       if (pruebaIds.length === 0) {
-        return AnaliticaMapper.toAnaliticaResponse({ partidas: [] });
+        return AnaliticaMapper.toAnaliticaResponse({ partidas: [], respuestas: [], pruebaTituloMap });
       }
 
       const partidas = await prisma.tbl_t_partida.findMany({
@@ -49,9 +50,11 @@ class AnaliticaService {
         },
         select: {
           id_partida: true,
+          prueba_id: true,
           fecha_creacion: true,
           tbl_t_prueba: {
             select: {
+              titulo: true,
               _count: { select: { tbl_t_pregunta: { where: { estado: true } } } },
             },
           },
@@ -77,8 +80,29 @@ class AnaliticaService {
         orderBy: { fecha_creacion: 'asc' },
       });
 
-      logger.info('Analitica fetched', { usuarioId, totalPartidas: partidas.length });
-      return AnaliticaMapper.toAnaliticaResponse({ partidas });
+      const partidaIds = partidas.map((p) => p.id_partida);
+
+      const respuestas = partidaIds.length > 0
+        ? await prisma.tbl_t_respuesta.findMany({
+            where: {
+              estado: true,
+              tbl_t_partida_estudiante: { partida_id: { in: partidaIds } },
+            },
+            select: {
+              pregunta_id: true,
+              tbl_t_opcion: { select: { es_correcta: true } },
+              tbl_t_pregunta: { select: { texto: true, prueba_id: true } },
+            },
+          })
+        : [];
+
+      logger.info('Analitica fetched', {
+        usuarioId,
+        totalPartidas: partidas.length,
+        totalRespuestas: respuestas.length,
+      });
+
+      return AnaliticaMapper.toAnaliticaResponse({ partidas, respuestas, pruebaTituloMap });
     } catch (error) {
       if (error instanceof AppError) throw error;
       logger.error('Error fetching analitica', { usuarioId, error: error.message });
