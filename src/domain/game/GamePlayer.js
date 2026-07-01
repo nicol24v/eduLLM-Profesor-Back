@@ -9,12 +9,12 @@ class GamePlayer {
   #currentAnswerTime;
   #answerHistory;
 
-  constructor({ socketId, playerId, nickname }) {
+  constructor({ socketId, playerId, nickname, score, correctAnswers }) {
     this.#socketId = socketId;
     this.#playerId = playerId;
     this.#nickname = nickname;
-    this.#score = 0;
-    this.#correctAnswers = 0;
+    this.#score = score ?? 0;
+    this.#correctAnswers = correctAnswers ?? 0;
     this.#currentAnswerTime = null;
     this.#answerHistory = [];
   }

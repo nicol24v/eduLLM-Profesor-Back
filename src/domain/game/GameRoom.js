@@ -72,6 +72,10 @@ class GameRoom {
     this.#status = GameStatus.SHOW_QUESTION;
   }
 
+  setQuestionStartedAt(timestamp) {
+    this.#questionStartedAt = timestamp;
+  }
+
   openAnswers() {
     this.#answersClosed = false;
     this.#status = GameStatus.SELECT_ANSWER;
@@ -163,14 +167,32 @@ class GameRoom {
   }
 
   toJSON() {
+    const q = this.getCurrentQuestion();
     return {
       partidaId: this.#partidaId,
       codigoAcceso: this.#codigoAcceso,
+      titulo: this.#prueba?.titulo || '',
       status: this.#status,
       currentQuestionIndex: this.#currentQuestionIndex,
       totalQuestions: this.totalQuestions,
       playerCount: this.#players.size,
       players: this.getPlayers().map((p) => p.toJSON()),
+      currentQuestion: q ? {
+        index: this.#currentQuestionIndex,
+        total: this.totalQuestions,
+        texto: q.texto,
+        tipo: q.tipo,
+        tiempo_limite: q.tiempo_limite,
+        cooldown: q.cooldown,
+        image_url: q.image_url,
+        elapsedMs: this.getElapsedMs(),
+        opciones: q.opciones.map((o) => ({
+          id_opcion: o.id_opcion,
+          texto: o.texto,
+          orden: o.orden,
+          es_correcta: o.es_correcta,
+        })),
+      } : null,
     };
   }
 }

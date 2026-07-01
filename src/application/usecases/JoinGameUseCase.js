@@ -25,16 +25,19 @@ class JoinGameUseCase {
         room = await partidaService.reconstructRoom(codigoAcceso);
         if (!room) throw new AppError('Sala no encontrada', 404, 'SALA_NOT_FOUND');
       }
-      if (room.status !== GameStatus.SHOW_ROOM) {
-        throw new AppError('La partida ya ha comenzado', 400, 'GAME_ALREADY_STARTED');
-      }
-
       const existing = room.getPlayer(playerId);
       if (existing) {
+        if (room.status === GameStatus.FINISHED) {
+          throw new AppError('La partida ya finalizó', 400, 'GAME_FINISHED');
+        }
         existing.updateSocket(socketId);
         this.#sqliteRepo.savePlayer(room.partidaId, existing);
         logger.info('UseCase: JoinGame player reconnected', { codigoAcceso, playerId });
         return { room, player: existing, reconnected: true };
+      }
+
+      if (room.status !== GameStatus.SHOW_ROOM && room.status !== GameStatus.SHOW_START) {
+        throw new AppError('La partida ya ha comenzado', 400, 'GAME_ALREADY_STARTED');
       }
 
       const player = new GamePlayer({ socketId, playerId, nickname });

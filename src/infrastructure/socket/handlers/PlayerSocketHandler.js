@@ -46,13 +46,20 @@ class PlayerSocketHandler {
         reconnected,
       });
 
+      const roomJson = room.toJSON();
       ack?.({
         ok: true,
         data: {
           status: room.status,
           playerCount: room.getPlayerCount(),
+          players: room.getPlayers().map((p) => ({
+            playerId: p.playerId,
+            nickname: p.nickname,
+          })),
           titulo: room.prueba.titulo,
           totalPreguntas: room.totalQuestions,
+          currentQuestion: roomJson.currentQuestion,
+          currentQuestionIndex: room.currentQuestionIndex,
         },
       });
     } catch (err) {

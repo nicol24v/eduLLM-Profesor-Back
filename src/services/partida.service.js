@@ -2,7 +2,9 @@ const prisma = require('../config/prisma');
 const AppError = require('../utils/AppError');
 const logger = require('../config/logger');
 const { generateAccessCode } = require('../utils/codeGenerator');
+const GameStatus = require('../domain/game/GameStatus');
 const GameRoom = require('../domain/game/GameRoom');
+const GamePlayer = require('../domain/game/GamePlayer');
 const GameRegistry = require('../domain/game/GameRegistry');
 const SQLiteGameRepository = require('../infrastructure/persistence/SQLiteGameRepository');
 const PartidaRepository = require('../repositories/partida.repository');
@@ -359,7 +361,7 @@ class PartidaService {
   async reconstructRoom(codigoAcceso) {
     logger.info('Reconstructing room from DB', { codigoAcceso });
     try {
-      const partida = await prisma.tbl_t_partida.findUnique({
+      const partida = await prisma.tbl_t_partida.findFirst({
         where: { codigo_acceso: codigoAcceso, estado: true },
         include: {
           tbl_t_prueba: {
@@ -373,7 +375,7 @@ class PartidaService {
         },
       });
 
-      if (!partida || (partida.estado_partida !== 'esperando' && partida.estado_partida !== 'en_curso')) {
+      if (!partida || partida.estado_partida === 'finalizada') {
         logger.warn('Cannot reconstruct room: invalid state', { codigoAcceso, estado: partida?.estado_partida });
         return null;
       }
@@ -404,11 +406,44 @@ class PartidaService {
         managerSocketId: null,
       });
 
+      if (partida.estado_partida === 'en_curso') {
+        const saved = new SQLiteGameRepository().getRoomData(partida.id_partida);
+        const qi = saved?.question_index ?? -1;
+
+        if (qi >= 0) {
+          room.startQuestion(qi);
+          if (saved.question_started_at) {
+            const cooldownMs = (prueba.preguntas[qi]?.cooldown ?? 0) * 1000;
+            if (saved.answers_closed === 0) {
+              room.openAnswers();
+              room.setQuestionStartedAt(saved.question_started_at + cooldownMs);
+            } else {
+              room.setQuestionStartedAt(saved.question_started_at);
+            }
+          }
+        } else {
+          room.transitionTo(GameStatus.SHOW_START);
+        }
+      }
+
+      const sqliteRepo = new SQLiteGameRepository();
+      const savedPlayers = sqliteRepo.getPlayers(partida.id_partida);
+      for (const sp of savedPlayers) {
+        const player = new GamePlayer({
+          socketId: sp.socket_id,
+          playerId: sp.player_id,
+          nickname: sp.nickname,
+          score: sp.score,
+          correctAnswers: sp.correct_answers,
+        });
+        room.addPlayer(player);
+      }
+
       const registry = GameRegistry.getInstance();
       registry.register(room);
-      new SQLiteGameRepository().saveRoom(room);
+      sqliteRepo.saveRoom(room);
 
-      logger.info('Room reconstructed and registered', { codigoAcceso, partidaId: partida.id_partida });
+      logger.info('Room reconstructed and registered', { codigoAcceso, partidaId: partida.id_partida, players: savedPlayers.length });
       return room;
     } catch (error) {
       logger.error('Error reconstructing room', { codigoAcceso, error: error.message });

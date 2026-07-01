@@ -72,10 +72,18 @@ class SQLiteGameRepository {
     `).run(partidaId, playerId, preguntaId, opcionId, points, elapsedMs);
   }
 
+  getPlayers(partidaId) {
+    return this.#db.prepare(`SELECT * FROM game_players WHERE partida_id = ?`).all(partidaId);
+  }
+
   deleteRoom(partidaId) {
     this.#db.prepare(`DELETE FROM game_answers WHERE partida_id = ?`).run(partidaId);
     this.#db.prepare(`DELETE FROM game_players WHERE partida_id = ?`).run(partidaId);
     this.#db.prepare(`DELETE FROM game_rooms WHERE partida_id = ?`).run(partidaId);
+  }
+
+  getRoomData(partidaId) {
+    return this.#db.prepare(`SELECT * FROM game_rooms WHERE partida_id = ?`).get(partidaId);
   }
 
   getAllRooms() {
