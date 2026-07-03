@@ -90,6 +90,10 @@ class GameRoom {
     return this.#answersClosed;
   }
 
+  getQuestionStartedAt() {
+    return this.#questionStartedAt;
+  }
+
   getElapsedMs() {
     if (!this.#questionStartedAt) return 0;
     return Date.now() - this.#questionStartedAt;

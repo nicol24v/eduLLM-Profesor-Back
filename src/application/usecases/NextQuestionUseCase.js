@@ -53,6 +53,7 @@ class NextQuestionUseCase {
         tiempo_limite: question.tiempo_limite,
         cooldown: question.cooldown,
         image_url: question.image_url,
+        startedAt: room.getQuestionStartedAt(),
         opciones: question.opciones.map((o) => ({
           id_opcion: o.id_opcion,
           texto: o.texto,

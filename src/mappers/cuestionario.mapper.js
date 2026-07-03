@@ -48,6 +48,7 @@ class CuestionarioMapper {
           texto: o.texto,
           orden: o.orden,
           es_correcta: o.es_correcta,
+          retroalimentacion: o.retroalimentacion,
         })),
       })),
       _count: prueba._count,
