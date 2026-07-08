@@ -436,6 +436,7 @@ class PartidaService {
           score: sp.score,
           correctAnswers: sp.correct_answers,
         });
+        player.setDisconnected(true);
         room.addPlayer(player);
       }
 

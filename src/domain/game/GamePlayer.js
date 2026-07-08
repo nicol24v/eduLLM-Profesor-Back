@@ -8,6 +8,7 @@ class GamePlayer {
   #correctAnswers;
   #currentAnswerTime;
   #answerHistory;
+  #disconnected;
 
   constructor({ socketId, playerId, nickname, score, correctAnswers }) {
     this.#socketId = socketId;
@@ -17,6 +18,7 @@ class GamePlayer {
     this.#correctAnswers = correctAnswers ?? 0;
     this.#currentAnswerTime = null;
     this.#answerHistory = [];
+    this.#disconnected = false;
   }
 
   get socketId() { return this.#socketId; }
@@ -25,9 +27,15 @@ class GamePlayer {
   get score() { return this.#score; }
   get correctAnswers() { return this.#correctAnswers; }
   get answerHistory() { return [...this.#answerHistory]; }
+  get disconnected() { return this.#disconnected; }
 
   updateSocket(socketId) {
     this.#socketId = socketId;
+    this.#disconnected = false;
+  }
+
+  setDisconnected(value) {
+    this.#disconnected = value;
   }
 
   recordAnswer({ opcionId, preguntaId, points, elapsedMs }) {
@@ -62,6 +70,7 @@ class GamePlayer {
       nickname: this.#nickname,
       score: this.#score,
       correctAnswers: this.#correctAnswers,
+      disconnected: this.#disconnected,
     };
   }
 }

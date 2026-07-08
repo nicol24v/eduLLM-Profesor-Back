@@ -25,7 +25,7 @@ class DashboardService {
         where: { profesor_id: profesor.id_profesor, estado: true },
         include: {
           tbl_m_materia: { select: { nombre: true } },
-          tbl_m_periodo_lectivo: { select: { nombre: true, es_activo: true } },
+          tbl_m_periodo_lectivo: { select: { nombre: true, estado: true } },
         },
       });
 

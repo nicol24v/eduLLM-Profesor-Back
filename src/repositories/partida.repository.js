@@ -137,7 +137,7 @@ class PartidaRepository {
         profesor_id: profesorId,
         materia_id: parseInt(materiaId, 10),
         estado: true,
-        tbl_m_periodo_lectivo: { es_activo: true },
+        tbl_m_periodo_lectivo: { estado: true },
       },
     });
   }

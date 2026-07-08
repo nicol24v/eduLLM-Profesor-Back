@@ -21,7 +21,7 @@ class AnaliticaService {
         where: {
           profesor_id: profesor.id_profesor,
           estado: true,
-          tbl_m_periodo_lectivo: { es_activo: true },
+          tbl_m_periodo_lectivo: { estado: true },
         },
         select: { id_profesor_materia: true },
       });

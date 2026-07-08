@@ -19,7 +19,7 @@ class DashboardMapper {
         id_profesor_materia: pm.id_profesor_materia,
         materia: pm.tbl_m_materia?.nombre,
         periodo: pm.tbl_m_periodo_lectivo?.nombre,
-        es_activo: pm.tbl_m_periodo_lectivo?.es_activo,
+        estado: pm.tbl_m_periodo_lectivo?.estado,
       })),
     };
   }

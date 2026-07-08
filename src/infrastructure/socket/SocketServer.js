@@ -19,6 +19,8 @@ class SocketServer {
         methods: ['GET', 'POST'],
       },
       transports: ['websocket', 'polling'],
+      pingInterval: 10000,  // Ping cada 10 segundos
+      pingTimeout: 5000,    // Timeout después de 5 segundos sin respuesta
     });
 
     this.#managerHandler = new ManagerSocketHandler(this.#io);
@@ -44,6 +46,7 @@ class SocketServer {
 
   #onConnection(socket) {
     const role = socket.handshake.query?.role;
+    console.log(`[DEBUG] Nuevo socket conectado: ${socket.id}, role: ${role}`);
 
     if (role === 'manager') {
       this.#managerHandler.register(socket);
@@ -51,7 +54,8 @@ class SocketServer {
       this.#playerHandler.register(socket);
     }
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      console.log(`[DEBUG] Socket desconectado: ${socket.id}, razón: ${reason}`);
       this.#playerHandler.handleDisconnect(socket);
     });
   }

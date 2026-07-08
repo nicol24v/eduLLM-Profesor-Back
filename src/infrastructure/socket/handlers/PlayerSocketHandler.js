@@ -34,6 +34,14 @@ class PlayerSocketHandler {
         nickname,
       });
 
+      const allPlayers = room.getPlayers().map(p => ({
+        playerId: p.playerId,
+        nickname: p.nickname,
+        disconnected: p.disconnected,
+        socketId: p.socketId,
+      }));
+      console.log(`[DEBUG] Sala ${codigoAcceso} - Total jugadores: ${allPlayers.length}, Conectados: ${room.getConnectedPlayerCount()}`, JSON.stringify(allPlayers));
+
       socket.join(`game:${codigoAcceso}`);
       socket.data.codigoAcceso = codigoAcceso;
       socket.data.playerId = playerId;
@@ -42,7 +50,7 @@ class PlayerSocketHandler {
       this.#io.to(`game:${codigoAcceso}`).emit('game:player_joined', {
         playerId: player.playerId,
         nickname: player.nickname,
-        playerCount: room.getPlayerCount(),
+        playerCount: room.getConnectedPlayerCount(),
         reconnected,
       });
 
@@ -51,15 +59,17 @@ class PlayerSocketHandler {
         ok: true,
         data: {
           status: room.status,
-          playerCount: room.getPlayerCount(),
-          players: room.getPlayers().map((p) => ({
-            playerId: p.playerId,
-            nickname: p.nickname,
-          })),
+          playerCount: room.getConnectedPlayerCount(),
+          players: room.getPlayers()
+            .filter(p => !p.disconnected)
+            .map((p) => ({
+              playerId: p.playerId,
+              nickname: p.nickname,
+            })),
           titulo: room.prueba.titulo,
           totalPreguntas: room.totalQuestions,
           currentQuestion: roomJson.currentQuestion,
-          currentQuestionIndex: room.currentQuestionIndex,
+          currentQuestionIndex: roomJson.currentQuestionIndex,
         },
       });
     } catch (err) {
@@ -96,7 +106,7 @@ class PlayerSocketHandler {
 
     this.#io.to(`game:${codigoAcceso}`).emit('game:player_left', {
       playerId,
-      playerCount: room.getPlayerCount(),
+      playerCount: room.getConnectedPlayerCount(),
     });
   }
 
@@ -105,12 +115,24 @@ class PlayerSocketHandler {
     if (role !== 'player' || !codigoAcceso || !playerId) return;
 
     const room = this.#registry.findByCode(codigoAcceso);
-    if (!room || room.status !== GameStatus.SHOW_ROOM) return;
+    if (!room) return;
 
-    room.removePlayer(playerId);
+    const player = room.getPlayer(playerId);
+    if (player) {
+      player.setDisconnected(true);
+      console.log(`[DEBUG] Jugador desconectado: ${playerId} (${player.nickname}) en sala ${codigoAcceso}`);
+    }
+
+    const allPlayers = room.getPlayers().map(p => ({
+      playerId: p.playerId,
+      nickname: p.nickname,
+      disconnected: p.disconnected,
+    }));
+    console.log(`[DEBUG] Estado sala ${codigoAcceso} después de desconexión:`, JSON.stringify(allPlayers));
+
     this.#io.to(`game:${codigoAcceso}`).emit('game:player_left', {
       playerId,
-      playerCount: room.getPlayerCount(),
+      playerCount: room.getConnectedPlayerCount(),
     });
   }
 }

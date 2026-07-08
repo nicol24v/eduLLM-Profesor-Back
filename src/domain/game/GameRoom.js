@@ -57,6 +57,10 @@ class GameRoom {
     return this.#players.size;
   }
 
+  getConnectedPlayerCount() {
+    return [...this.#players.values()].filter(p => !p.disconnected).length;
+  }
+
   updateManagerSocket(socketId) {
     this.#managerSocketId = socketId;
   }
@@ -130,7 +134,10 @@ class GameRoom {
 
     player.recordAnswer({ opcionId, preguntaId: question.id_pregunta, points, elapsedMs: elapsed });
 
-    return { accepted: true, isCorrect, points };
+    const selectedOption = question.opciones.find((o) => o.id_opcion === opcionId);
+    const correctOption = question.opciones.find((o) => o.es_correcta);
+
+    return { accepted: true, isCorrect, points, correctOpcionId: correctOption?.id_opcion ?? null, retroalimentacion: selectedOption?.retroalimentacion ?? null };
   }
 
   getLeaderboard() {
@@ -195,6 +202,7 @@ class GameRoom {
           texto: o.texto,
           orden: o.orden,
           es_correcta: o.es_correcta,
+          retroalimentacion: o.retroalimentacion,
         })),
       } : null,
     };

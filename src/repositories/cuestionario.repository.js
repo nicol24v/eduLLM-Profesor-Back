@@ -11,7 +11,7 @@ class CuestionarioRepository {
           tbl_t_profesor_materia: {
             include: {
               tbl_m_materia: { select: { id_materia: true, nombre: true } },
-              tbl_m_periodo_lectivo: { select: { nombre: true, es_activo: true } },
+              tbl_m_periodo_lectivo: { select: { nombre: true, estado: true } },
             },
           },
           tbl_t_pregunta: {

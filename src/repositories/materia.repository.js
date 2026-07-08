@@ -11,7 +11,7 @@ class MateriaRepository {
           tbl_m_materia: {
             include: { tbl_m_grado: { select: { grado: true, paralelo: true } } },
           },
-          tbl_m_periodo_lectivo: { select: { nombre: true, es_activo: true } },
+          tbl_m_periodo_lectivo: { select: { nombre: true, estado: true } },
         },
         orderBy: { fecha_asignacion: 'desc' },
       });
@@ -31,7 +31,7 @@ class MateriaRepository {
           profesor_id: profesorId,
           materia_id: parseInt(materiaId, 10),
           estado: true,
-          tbl_m_periodo_lectivo: { es_activo: true },
+          tbl_m_periodo_lectivo: { estado: true },
         },
         include: {
           tbl_m_materia: true,

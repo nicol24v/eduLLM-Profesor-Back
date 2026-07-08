@@ -12,7 +12,7 @@ class MateriaMapper {
           : null,
       },
       periodo: pm.tbl_m_periodo_lectivo?.nombre,
-      es_activo: pm.tbl_m_periodo_lectivo?.es_activo,
+      estado: pm.tbl_m_periodo_lectivo?.estado,
     };
   }
 
@@ -42,7 +42,7 @@ class MateriaMapper {
             nombre: pm.tbl_m_periodo_lectivo.nombre,
             fecha_inicio: pm.tbl_m_periodo_lectivo.fecha_inicio,
             fecha_fin: pm.tbl_m_periodo_lectivo.fecha_fin,
-            es_activo: pm.tbl_m_periodo_lectivo.es_activo,
+            estado: pm.tbl_m_periodo_lectivo.estado,
           }
         : null,
       estudiantes: (estudiantes || []).map((e) => ({

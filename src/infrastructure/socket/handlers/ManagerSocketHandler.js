@@ -177,7 +177,7 @@ class ManagerSocketHandler {
 
       this.#io.to(`game:${codigoAcceso}`).emit('game:player_left', {
         playerId: data.playerId,
-        playerCount: room.getPlayerCount(),
+        playerCount: room.getConnectedPlayerCount(),
       });
 
       ack?.({ ok: true });
@@ -201,7 +201,10 @@ class ManagerSocketHandler {
       socket.data.codigoAcceso = codigoAcceso;
       socket.data.role = 'manager';
 
-      ack?.({ ok: true, data: room.toJSON() });
+      const roomJson = room.toJSON();
+      roomJson.players = roomJson.players.filter(p => !p.disconnected);
+      roomJson.playerCount = roomJson.players.length;
+      ack?.({ ok: true, data: roomJson });
     } catch (err) {
       ack?.({ ok: false, error: err.message });
     }

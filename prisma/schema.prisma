@@ -97,7 +97,6 @@ model tbl_m_periodo_lectivo {
   nombre                   String                     @db.VarChar(100)
   fecha_inicio             DateTime                   @db.Date
   fecha_fin                DateTime                   @db.Date
-  es_activo                Boolean?                   @default(false)
   fecha_creacion           DateTime?                  @default(now()) @db.Timestamptz(6)
   usuario_creacion         Int?
   fecha_modificacion       DateTime?                  @db.Timestamptz(6)
